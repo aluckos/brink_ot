@@ -25,18 +25,17 @@ async def to_code(config):
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
     conf_data = TYPES[config[CONF_TYPE]]
     
-    # Tworzymy czysty obiekt sensora z domyślnymi wartościami
+    # Tworzymy obiekt sensora
     var = await sensor.new_sensor(config)
     
-    # Ręcznie ustawiamy parametry, których new_sensor nie pobrał automatycznie
+    # Ustawiamy parametry techniczne
     cg.add(var.set_unit_of_measurement(conf_data[1]))
     cg.add(var.set_accuracy_decimals(conf_data[2]))
     if conf_data[3] is not None:
         cg.add(var.set_device_class(conf_data[3]))
     
-    # TA LINIA ZOSTAŁA ZMIENIONA DLA KOMPILATORA C++
-    cg.add(var.set_state_class(sensor.STATE_CLASS_MEASUREMENT))
+    # NAPRAWA: Używamy stałej zaimportowanej z esphome.const
+    cg.add(var.set_state_class(STATE_CLASS_MEASUREMENT))
     
-    # Łączymy z brink_ot.h
-    func = getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")
-    cg.add(func(var))
+    # Łączymy z odpowiednią funkcją w brink_ot.h
+    cg.add(getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")(var))
