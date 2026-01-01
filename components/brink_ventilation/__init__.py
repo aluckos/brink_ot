@@ -2,7 +2,12 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
 
-# Przestrzeń nazw
+# To mówi ESPHome, żeby pobrało bibliotekę OpenTherm z rejestru PlatformIO
+# Używamy konkretnej wersji, aby zapewnić stabilność
+CODEOWNERS = ["@aluckos"]
+DEPENDENCIES = []
+AUTO_LOAD = ["sensor", "number", "text_sensor"]
+
 brink_ventilation_ns = cg.esphome_ns.namespace("brink_ventilation")
 BrinkOpenTherm = brink_ventilation_ns.class_("BrinkOpenTherm", cg.PollingComponent)
 
@@ -15,7 +20,9 @@ CONFIG_SCHEMA = cv.Schema({
 }).extend(cv.polling_component_schema("1500ms"))
 
 async def to_code(config):
-    # Kluczowa zmiana: new_Pvariable zamiast new_variable
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     cg.add(var.set_pins(config["in_pin"], config["out_pin"]))
+    
+    # Dodanie biblioteki OpenTherm (autorstwa Ihora Melnyka)
+    cg.add_library("ihormelnyk/OpenTherm Library", "1.1.5")
