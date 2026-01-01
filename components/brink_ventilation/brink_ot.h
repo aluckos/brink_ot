@@ -3,7 +3,8 @@
 #include "esphome.h"
 #include <OpenTherm.h>
 
-using namespace esphome;
+namespace esphome {
+namespace brink_ventilation {
 
 class BrinkOpenTherm : public PollingComponent {
  public:
@@ -25,19 +26,19 @@ class BrinkOpenTherm : public PollingComponent {
   void set_exhaust_temp_sensor(sensor::Sensor *s) { exhaust_temp_sensor = s; }
 
   void update() override {
-    // ID 77: Aktualna moc wentylacji
+    // ID 77: Relative ventilation
     unsigned long response = ot.sendRequest(ot.buildRequest(OpenThermMessageType::Read_Data, 77, 0));
     if (ot.isValidResponse(response) && current_vent_sensor != nullptr) {
         current_vent_sensor->publish_state(ot.getFloat(response));
     }
 
-    // ID 80: Temperatura nawiewu
+    // ID 80: Supply inlet temp
     response = ot.sendRequest(ot.buildRequest(OpenThermMessageType::Read_Data, 80, 0));
     if (ot.isValidResponse(response) && supply_temp_sensor != nullptr) {
         supply_temp_sensor->publish_state(ot.getFloat(response));
     }
 
-    // ID 82: Temperatura wywiewu
+    // ID 82: Exhaust air temp
     response = ot.sendRequest(ot.buildRequest(OpenThermMessageType::Read_Data, 82, 0));
     if (ot.isValidResponse(response) && exhaust_temp_sensor != nullptr) {
         exhaust_temp_sensor->publish_state(ot.getFloat(response));
@@ -59,3 +60,6 @@ class BrinkVentilationNumber : public number::Number {
     parent_->set_ventilation_level(value);
   }
 };
+
+} // namespace brink_ventilation
+} // namespace esphome
