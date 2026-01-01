@@ -6,7 +6,7 @@ from . import brink_ns, BrinkOpenTherm, CONF_BRINK_VENTILATION_ID
 
 BrinkVentilationNumber = brink_ns.class_("BrinkVentilationNumber", number.Number)
 
-# Zmieniono number.NUMBER_SCHEMA na number.number_schema
+# Używamy funkcji number_schema zamiast stałej NUMBER_SCHEMA
 CONFIG_SCHEMA = number.number_schema(
     BrinkVentilationNumber,
 ).extend({
