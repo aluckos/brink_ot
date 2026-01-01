@@ -20,44 +20,44 @@ class BrinkOpenTherm : public PollingComponent {
   
   float target_ventilation = 0.0f;
 
-  // Skracamy interwał do 2s, ale będziemy wysyłać tylko jedno zapytanie na raz
   BrinkOpenTherm(int in, int out) : PollingComponent(2000), pin_in(in), pin_out(out) {}
+
+  // Przywracamy brakujące metody set_, których szuka kompilator w main.cpp
+  void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
+  void set_supply_temp_sensor(sensor::Sensor *s) { supply_temp_sensor = s; }
+  void set_exhaust_temp_sensor(sensor::Sensor *s) { exhaust_temp_sensor = s; }
 
   void setup() override {
     pinMode(pin_in, INPUT);
     pinMode(pin_out, OUTPUT);
     ot = new OpenTherm(pin_in, pin_out);
     
-    // TEST: Włączamy tryb INVERTED (drugi parametr true)
-    // Jeśli po tym logi nadal będą puste, zmień na false
-    ot->begin(handleInterrupt, true); 
+    // Zgodnie z błędem - tylko jeden argument
+    ot->begin(handleInterrupt); 
     
-    ESP_LOGI("brink", "Inicjalizacja OpenTherm (Tryb Inverted)");
+    ESP_LOGI("brink", "Inicjalizacja OpenTherm na pinach IN:%d, OUT:%d", pin_in, pin_out);
   }
 
   void update() override {
     static int step = 0;
     unsigned long response;
 
-    // Maszyna stanów, aby nie wysyłać wszystkiego na raz (nie blokować procesora)
     switch(step) {
-      case 0: // Krok 0: Status i wybudzenie (ID 0)
-        // 0x0100 = Master Status: CH enabled (wymagane przez Brinka)
+      case 0: // Status (ID 0)
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
         step++;
         break;
 
-      case 1: // Krok 1: Odczyt mocy (ID 77)
+      case 1: // Odczyt mocy (ID 77)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)77, 0));
         if (ot->isValidResponse(response)) {
           float val = ot->getUInt(response);
           if (current_vent_sensor != nullptr) current_vent_sensor->publish_state(val);
-          ESP_LOGD("brink", "Moc Brinka: %.1f%%", val);
         }
         step++;
         break;
 
-      case 2: // Krok 2: Temperatura nawiewu (ID 80)
+      case 2: // Temperatura nawiewu (ID 80)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (ot->isValidResponse(response) && supply_temp_sensor != nullptr) {
           supply_temp_sensor->publish_state(ot->getFloat(response));
@@ -65,13 +65,12 @@ class BrinkOpenTherm : public PollingComponent {
         step++;
         break;
 
-      case 3: // Krok 3: Zapis mocy (ID 71)
+      case 3: // Zapis mocy (ID 71)
         if (target_ventilation > 0) {
           unsigned int data = ot->temperatureToData(target_ventilation);
           ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, data));
-          ESP_LOGD("brink", "Wysyłam nastawę mocy: %.1f%%", target_ventilation);
         }
-        step = 0; // Powrót do początku
+        step = 0; 
         break;
     }
   }
