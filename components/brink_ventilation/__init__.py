@@ -6,7 +6,7 @@ from esphome.const import CONF_ID
 brink_ns = cg.esphome_ns.namespace('brink_ventilation')
 BrinkOpenTherm = brink_ns.class_('BrinkOpenTherm', cg.PollingComponent)
 
-# Stała współdzielona między plikami sensor.py i number.py
+# Stała współdzielona między plikami
 CONF_BRINK_VENTILATION_ID = "brink_ventilation_id"
 
 CONFIG_SCHEMA = cv.Schema({
@@ -18,5 +18,5 @@ CONFIG_SCHEMA = cv.Schema({
 def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID], config['in_pin'], config['out_pin'])
     yield cg.register_component(var, config)
-    # Poprawiony link do ZIP (gałąź 'main' zamiast 'master')
-    cg.add_library("OpenTherm", None, "https://github.com/ihormaze/OpenTherm/archive/refs/heads/main.zip")
+    # Poprawny link do biblioteki Ihora Melnyka
+    cg.add_library("opentherm_library", None, "https://github.com/ihormelnyk/opentherm_library/archive/refs/heads/master.zip")
