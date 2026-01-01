@@ -15,6 +15,4 @@ def to_code(config):
     paren = yield cg.get_variable(config[CONF_BRINK_VENTILATION_ID])
     var = cg.new_Pvariable(config[CONF_ID])
     yield number.register_number(var, config, min_value=0, max_value=100, step=1)
-    
-    # Połącz suwak z funkcją w C++
     cg.add(var.set_parent(paren))
