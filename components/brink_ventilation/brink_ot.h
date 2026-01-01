@@ -6,14 +6,11 @@
 namespace esphome {
 namespace brink_ventilation {
 
-static void IRAM_ATTR handleInterrupt() {
-    // Pusta implementacja
-}
+static void IRAM_ATTR handleInterrupt() { }
 
 class BrinkOpenTherm : public PollingComponent {
  public:
   OpenTherm ot;
-  
   sensor::Sensor *current_vent_sensor{nullptr};
   sensor::Sensor *supply_temp_sensor{nullptr};
   sensor::Sensor *exhaust_temp_sensor{nullptr};
@@ -23,6 +20,7 @@ class BrinkOpenTherm : public PollingComponent {
 
   void setup() override {
     ot.begin(handleInterrupt);
+    ESP_LOGI("brink", "Inicjalizacja OpenTherm zakończona.");
   }
 
   void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
@@ -30,35 +28,40 @@ class BrinkOpenTherm : public PollingComponent {
   void set_exhaust_temp_sensor(sensor::Sensor *s) { exhaust_temp_sensor = s; }
 
   void update() override {
-    // Rzutowanie na (OpenThermMessageID) rozwiązuje błąd konwersji int
+    ESP_LOGD("brink", "Wysyłam zapytanie o status (ID 77)...");
     
-    // ID 77: Relative ventilation
     unsigned long request77 = ot.buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)77, 0);
     unsigned long response77 = ot.sendRequest(request77);
-    if (ot.isValidResponse(response77) && current_vent_sensor != nullptr) {
-        current_vent_sensor->publish_state(ot.getUInt(response77));
+    
+    if (ot.isValidResponse(response77)) {
+        float val = ot.getUInt(response77);
+        ESP_LOGI("brink", "Otrzymano odpowiedź ID 77: %.1f", val);
+        if (current_vent_sensor != nullptr) current_vent_sensor->publish_state(val);
+    } else {
+        ESP_LOGE("brink", "Błąd odpowiedzi OpenTherm (ID 77). Sprawdź połączenie!");
     }
 
-    // ID 80: Supply inlet temp
+    // Odczyt temperatury nawiewu (ID 80)
     unsigned long request80 = ot.buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0);
     unsigned long response80 = ot.sendRequest(request80);
-    if (ot.isValidResponse(response80) && supply_temp_sensor != nullptr) {
-        supply_temp_sensor->publish_state(ot.getFloat(response80));
-    }
-
-    // ID 82: Exhaust air temp
-    unsigned long request82 = ot.buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0);
-    unsigned long response82 = ot.sendRequest(request82);
-    if (ot.isValidResponse(response82) && exhaust_temp_sensor != nullptr) {
-        exhaust_temp_sensor->publish_state(ot.getFloat(response82));
+    if (ot.isValidResponse(response80)) {
+        float temp = ot.getFloat(response80);
+        ESP_LOGI("brink", "Temperatura nawiewu: %.1f C", temp);
+        if (supply_temp_sensor != nullptr) supply_temp_sensor->publish_state(temp);
     }
   }
 
   void set_ventilation_level(float level) {
-    // ID 71: Write ventilation level
+    ESP_LOGI("brink", "Próba ustawienia mocy na: %.1f%%", level);
     unsigned int data = ot.temperatureToData(level);
     unsigned long request71 = ot.buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, data);
-    ot.sendRequest(request71);
+    unsigned long response = ot.sendRequest(request71);
+    
+    if (ot.isValidResponse(response)) {
+        ESP_LOGI("brink", "Sukces! Brink potwierdził zmianę mocy.");
+    } else {
+        ESP_LOGE("brink", "Błąd! Brink nie odpowiedział na komendę zmiany mocy.");
+    }
   }
 };
 
