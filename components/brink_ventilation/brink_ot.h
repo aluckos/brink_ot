@@ -23,8 +23,8 @@ class BrinkOpenTherm : public PollingComponent {
   OpenTherm *ot = nullptr;
   int pin_in, pin_out;
   int current_step = 0;
-  float target_ventilation = 25.0f; // Domyślnie 25%
-  uint8_t temp_lb = 0;
+  float target_ventilation = 25.0f; 
+  uint16_t temp_raw = 0;
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
   sensor::Sensor *t_supply_out_sensor{nullptr};
@@ -52,7 +52,6 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
-    // Podstawowy status
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(20);
 
@@ -61,56 +60,41 @@ class BrinkOpenTherm : public PollingComponent {
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
 
-      case 1: // T1 - Czerpnia (Standard ID 80 zazwyczaj działa)
+      case 1: // T1 - Standard (Jeśli działa, zostawiamy)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 2: // T2 - Nawiew (TSP 32/33 zamiast ID 81)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 32 << 8));
-        if (response) temp_lb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-      case 3: 
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 33 << 8));
+      case 2: // T2 - Nawiew (Próba TSP 25)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 25 << 8));
         if (response && t_supply_out_sensor) {
-            float val = (float)((int16_t)(((uint16_t)(response & 0xFF) << 8) | temp_lb)) / 10.0f;
-            t_supply_out_sensor->publish_state(val);
+            // Składanie 16-bitowej wartości (HB i LB)
+            int16_t val = (int16_t)(response & 0xFFFF);
+            t_supply_out_sensor->publish_state((float)val / 10.0f);
         }
         current_step++; break;
 
-      case 4: // T3 - Wywiew (Standard ID 82 zazwyczaj działa)
+      case 3: // T3 - Standard (Jeśli działa, zostawiamy)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 5: // T4 - Wyrzutnia (TSP 36/37 zamiast ID 83)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 36 << 8));
-        if (response) temp_lb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-      case 6:
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 37 << 8));
+      case 4: // T4 - Wyrzutnia (Próba TSP 27)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 27 << 8));
         if (response && t_exhaust_out_sensor) {
-            float val = (float)((int16_t)(((uint16_t)(response & 0xFF) << 8) | temp_lb)) / 10.0f;
-            t_exhaust_out_sensor->publish_state(val);
+            int16_t val = (int16_t)(response & 0xFFFF);
+            t_exhaust_out_sensor->publish_state((float)val / 10.0f);
         }
         current_step++; break;
 
-      case 7: // Przepływ m3/h (TSP 52/53)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-        if (response) temp_lb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-      case 8:
+      case 5: // Przepływ (Uproszczony odczyt, skoro działał)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
-        if (response && current_flow_sensor) current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+        if (response && current_flow_sensor) current_flow_sensor->publish_state(response & 0xFFFF);
         current_step++; break;
 
-      case 9: // Ciśnienie Pa (TSP 64/65)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 64 << 8));
-        if (response) temp_lb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-      case 10:
+      case 6: // Ciśnienie
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
-        if (response && pressure_in_sensor) pressure_in_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+        if (response && pressure_in_sensor) pressure_in_sensor->publish_state(response & 0xFFFF);
         current_step = 0; break;
     }
   }
