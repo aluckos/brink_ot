@@ -20,73 +20,69 @@ class BrinkOpenTherm : public PollingComponent {
   
   float target_ventilation = 0.0f;
 
-  BrinkOpenTherm(int in, int out) : PollingComponent(2000), pin_in(in), pin_out(out) {}
+  BrinkOpenTherm(int in, int out) : PollingComponent(5000), pin_in(in), pin_out(out) {}
 
   void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
   void set_supply_temp_sensor(sensor::Sensor *s) { supply_temp_sensor = s; }
   void set_exhaust_temp_sensor(sensor::Sensor *s) { exhaust_temp_sensor = s; }
 
   void setup() override {
-    pinMode(pin_in, INPUT);
-    pinMode(pin_out, OUTPUT);
     ot = new OpenTherm(pin_in, pin_out);
-    
-    // Inicjalizacja standardowa
     ot->begin(handleInterrupt);
-    
-    // RĘCZNE WYMUSZENIE ODWRÓCONEJ LOGIKI (Inverted)
-    // To jest kluczowe dla adapterów na tranzystorach/transoptorach
-    ot->setInverted(true); 
+    ESP_LOGI("brink", "Inicjalizacja Brinka (Emulacja ID 71/77/80/82/89)");
+  }
 
-    ESP_LOGI("brink", "Inicjalizacja Brink (Tryb INVERTED)");
+  // Funkcja emulująca ot.getBrinkTSP(CurrentVol)
+  // W Twoim pliku .h: VentTSPEntry = 89, CurrentVol = 52
+  uint16_t readBrinkVolume() {
+    unsigned long request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8);
+    unsigned long response = ot->sendRequest(request);
+    if (ot->isValidResponse(response)) {
+        return ot->getUInt(response) & 0xFF; // Pobieramy dolny bajt danych
+    }
+    return 0;
   }
 
   void update() override {
-    static int step = 0;
-    unsigned long response;
+    // 1. Utrzymanie połączenia (Master Status)
+    ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
+    delay(50);
 
-    switch(step) {
-      case 0: // Status (ID 0) - Włączamy Master Status
-        ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
-        step++;
-        break;
+    // 2. Odczyt Temp. Nawiewu (ID 80)
+    unsigned long res80 = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
+    if (ot->isValidResponse(res80) && supply_temp_sensor != nullptr) {
+        supply_temp_sensor->publish_state(ot->getFloat(res80));
+    }
+    delay(50);
 
-      case 1: // Odczyt mocy (ID 77)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)77, 0));
-        if (ot->isValidResponse(response)) {
-          float val = ot->getUInt(response);
-          if (current_vent_sensor != nullptr) current_vent_sensor->publish_state(val);
-          ESP_LOGI("brink", "SUKCES! Moc odczytana: %.1f%%", val);
-        } else {
-          // Jeśli nie ma odpowiedzi, logujemy status fizyczny pinu
-          ESP_LOGD("brink", "Brak odpowiedzi ID 77 (Status pinu IN: %d)", digitalRead(pin_in));
-        }
-        step++;
-        break;
+    // 3. Odczyt Temp. Wywiewu (ID 82)
+    unsigned long res82 = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
+    if (ot->isValidResponse(res82) && exhaust_temp_sensor != nullptr) {
+        exhaust_temp_sensor->publish_state(ot->getFloat(res82));
+    }
+    delay(50);
 
-      case 2: // Temperatura nawiewu (ID 80)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
-        if (ot->isValidResponse(response) && supply_temp_sensor != nullptr) {
-          supply_temp_sensor->publish_state(ot->getFloat(response));
-        }
-        step++;
-        break;
+    // 4. Odczyt Aktualnego Przepływu (TSP 52 przez ID 89)
+    uint16_t volume = readBrinkVolume();
+    if (volume > 0 && current_vent_sensor != nullptr) {
+        current_vent_sensor->publish_state(volume);
+    }
+    delay(50);
 
-      case 3: // Zapis mocy (ID 71)
-        if (target_ventilation > 0) {
-          unsigned int data = ot->temperatureToData(target_ventilation);
-          unsigned long req = ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, data);
-          ot->sendRequest(req);
-          ESP_LOGD("brink", "Wysłano nastawę: %.1f%%", target_ventilation);
-        }
-        step = 0; 
-        break;
+    // 5. Zapis nastawy wentylacji (ID 71)
+    if (target_ventilation > 0) {
+        // W Brinku dane dla ID 71 to zazwyczaj dolny bajt (0-100)
+        unsigned long req71 = ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation);
+        ot->sendRequest(req71);
     }
   }
 
   void set_ventilation_level(float level) {
     target_ventilation = level;
-    ESP_LOGI("brink", "Zmieniono suwak na: %.1f%%", level);
+    // Natychmiastowa reakcja
+    unsigned long req71 = ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)level);
+    ot->sendRequest(req71);
+    ESP_LOGI("brink", "Wysłano nastawę: %.0f%%", level);
   }
 };
 
