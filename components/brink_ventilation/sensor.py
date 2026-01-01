@@ -16,27 +16,26 @@ TYPES = {
     "PRESSURE_IN": ["Brink Ciśnienie", "Pa", 0, None],
 }
 
-CONFIG_SCHEMA = cv.Schema({
+CONFIG_SCHEMA = sensor.sensor_schema().extend({
     cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm),
     cv.Required(CONF_TYPE): cv.one_of(*TYPES, upper=True),
-}).extend(sensor.sensor_schema()).extend(cv.COMPONENT_SCHEMA)
+}).extend(cv.COMPONENT_SCHEMA)
 
 async def to_code(config):
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
     conf_data = TYPES[config[CONF_TYPE]]
     
-    sensor_config = config.copy()
-    if CONF_NAME not in sensor_config:
-        sensor_config[CONF_NAME] = conf_data[0]
+    # Tworzymy obiekt sensora
+    var = await sensor.new_sensor(config)
     
-    var = await sensor.new_sensor(sensor_config)
-    
+    # Ustawiamy parametry techniczne w sposób zrozumiały dla C++
     cg.add(var.set_unit_of_measurement(conf_data[1]))
     cg.add(var.set_accuracy_decimals(conf_data[2]))
     if conf_data[3] is not None:
         cg.add(var.set_device_class(conf_data[3]))
     
-    # KLUCZOWA ZMIANA: Poprawne ustawienie StateClass dla C++
+    # To naprawia Twój błąd kompilacji:
     cg.add(var.set_state_class(STATE_CLASS_MEASUREMENT))
     
+    # Łączymy z odpowiednią funkcją w brink_ot.h
     cg.add(getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")(var))
