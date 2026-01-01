@@ -11,11 +11,13 @@ BRINK_VENTILATION_ID = "brink_ventilation_id"
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(BrinkOpenTherm),
-    cv.Required("in_pin"): pins.gpio_input_pin_number,
-    cv.Required("out_pin"): pins.gpio_output_pin_number,
+    # Używamy prostego int dla numeru pinu, co jest najbezpieczniejsze
+    cv.Required("in_pin"): cv.int_,
+    cv.Required("out_pin"): cv.int_,
 }).extend(cv.polling_component_schema("1500ms"))
 
 async def to_code(config):
     var = cg.new_variable(config[CONF_ID])
     await cg.register_component(var, config)
+    # Przekazujemy numery pinów do funkcji set_pins w C++
     cg.add(var.set_pins(config["in_pin"], config["out_pin"]))
