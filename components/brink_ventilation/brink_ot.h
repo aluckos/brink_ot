@@ -41,10 +41,7 @@ class BrinkOpenTherm : public PollingComponent {
   void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; }
   void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
   void set_pressure_in_sensor(sensor::Sensor *s) { pressure_in_sensor = s; }
-  
-  // TA LINIA NAPRAWIA BŁĄD set_status_text_sensor
   void set_status_text_sensor(text_sensor::TextSensor *s) { status_text_sensor = s; }
-  
   void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
 
   void setup() override {
