@@ -31,7 +31,7 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *t_exhaust_in_sensor{nullptr};
   sensor::Sensor *t_exhaust_out_sensor{nullptr};
   sensor::Sensor *current_flow_sensor{nullptr};
-  sensor::Sensor *pressure_in_sensor{nullptr};
+  sensor::Sensor *pressure_in_sensor{nullptr}; // Tu będziemy wysyłać RPM dla testu
   text_sensor::TextSensor *status_text_sensor{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
@@ -60,57 +60,44 @@ class BrinkOpenTherm : public PollingComponent {
     }
 
     switch(current_step) {
-      case 0: // Nastawa (ID 71 z Twojej listy)
+      case 0:
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
-
-      case 1: // T1 (ID 80) - Działa
+      case 1:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-
-      case 2: // T2 - Skoro ID 81 nie działa, sprawdzamy TSP 31 (częsty zamiennik we Flair)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 31 << 8));
+      case 2: // T2 - Test TSP 45 (często T_supply_out we Flair)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 45 << 8));
         if (response && t_supply_out_sensor) {
-            float t = (float)(response & 0xFF) - 100.0f;
-            if (t > -30 && t < 100) t_supply_out_sensor->publish_state(t);
+          t_supply_out_sensor->publish_state((float)(response & 0xFF));
         }
         current_step++; break;
-
-      case 3: // T3 (ID 82) - Działa
+      case 3:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-
-      case 4: // T4 - Skoro ID 83 nie działa, sprawdzamy TSP 32
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 32 << 8));
+      case 4: // T4 - Test TSP 46 (często T_exhaust_out we Flair)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 46 << 8));
         if (response && t_exhaust_out_sensor) {
-            float t = (float)(response & 0xFF) - 100.0f;
-            if (t > -30 && t < 100) t_exhaust_out_sensor->publish_state(t);
+          t_exhaust_out_sensor->publish_state((float)(response & 0xFF));
         }
         current_step++; break;
-
-      case 5: // PRZEPŁYW LB (TSP 52)
+      case 5:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-
-      case 6: // PRZEPŁYW HB (TSP 53)
+      case 6:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response && current_flow_sensor) {
           current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-
-      case 7: // CIŚNIENIE LB (TSP 66 - CPOD z Twojego pliku)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 66 << 8));
-        if (response) temp_lb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-
-      case 8: // CIŚNIENIE HB (TSP 67)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 67 << 8));
+      case 7: // Zamiast Ciśnienia - odczytujemy RPM wentylatora nawiewnego (ID 85)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)85, 0));
         if (response && pressure_in_sensor) {
-          pressure_in_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+          // Używamy sensora ciśnienia jako wyświetlacza RPM dla testu
+          pressure_in_sensor->publish_state((float)ot->getUInt(response));
         }
         current_step = 0; break;
     }
