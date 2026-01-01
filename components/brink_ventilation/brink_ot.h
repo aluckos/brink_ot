@@ -1,7 +1,7 @@
 #pragma once
 
 #include "esphome.h"
-#include <OpenTherm.h>
+#include <opentherm.h>
 
 namespace esphome {
 namespace brink_ventilation {
@@ -18,6 +18,8 @@ class BrinkOpenTherm : public PollingComponent {
   BrinkOpenTherm(int in, int out) : PollingComponent(10000), in_pin(in), out_pin(out) {}
 
   void setup() override {
+    // Biblioteka Melnyka wymaga definicji funkcji obsługi przerwań, 
+    // ale przy użyciu w ten sposób inicjalizujemy piny ręcznie:
     ot.begin(in_pin, out_pin);
   }
 
@@ -29,7 +31,7 @@ class BrinkOpenTherm : public PollingComponent {
     // ID 77: Relative ventilation
     unsigned long response = ot.sendRequest(ot.buildRequest(OpenThermMessageType::Read_Data, 77, 0));
     if (ot.isValidResponse(response) && current_vent_sensor != nullptr) {
-        current_vent_sensor->publish_state(ot.getFloat(response));
+        current_vent_sensor->publish_state(ot.getUInt(response));
     }
 
     // ID 80: Supply inlet temp
@@ -46,7 +48,8 @@ class BrinkOpenTherm : public PollingComponent {
   }
 
   void set_ventilation_level(float level) {
-    uint16_t data = ot.temperatureToData(level); 
+    // f8.8 format dla Ihora Melnyka to po prostu przekazanie float do buildRequest lub użycie helpera
+    unsigned int data = ot.temperatureToData(level);
     ot.sendRequest(ot.buildRequest(OpenThermMessageType::Write_Data, 71, data));
   }
 };
