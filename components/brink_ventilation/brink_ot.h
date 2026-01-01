@@ -67,22 +67,23 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 2: // T2 (Nawiew) - ID 81 (Ręczne wyciąganie wartości f8.8)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
+      case 2: // T2 (Nawiew) - spróbujmy TSP 56 (TempIndoors)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 56 << 8));
         if (response && t_supply_out_sensor) {
-            float t = (float)((int16_t)(response & 0xFFFF)) / 256.0f;
-            t_supply_out_sensor->publish_state(t);
+            // Wartość przesunięta o 100 (np. 122 = 22C)
+            float t = (float)(response & 0xFF) - 100.0f;
+            if (t > -30 && t < 100) t_supply_out_sensor->publish_state(t);
         }
         current_step++; break;
       case 3: // T3 (Wywiew) - ID 82
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 4: // T4 (Wyrzutnia) - ID 83 (Ręczne wyciąganie wartości f8.8)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
+      case 4: // T4 (Wyrzutnia) - spróbujmy TSP 55 (TempAtmo)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 55 << 8));
         if (response && t_exhaust_out_sensor) {
-            float t = (float)((int16_t)(response & 0xFFFF)) / 256.0f;
-            t_exhaust_out_sensor->publish_state(t);
+            float t = (float)(response & 0xFF) - 100.0f;
+            if (t > -30 && t < 100) t_exhaust_out_sensor->publish_state(t);
         }
         current_step++; break;
       case 5: // PRZEPŁYW LB (TSP 52)
@@ -95,14 +96,14 @@ class BrinkOpenTherm : public PollingComponent {
           current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-      case 7: // CIŚNIENIE LB (TSP 64)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 64 << 8));
+      case 7: // CIŚNIENIE LB - spróbujmy rejestr 66 (CPOD - Output Duct)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 66 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-      case 8: // CIŚNIENIE HB (TSP 65)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
+
+      case 8: // CIŚNIENIE HB - spróbujmy rejestr 67
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 67 << 8));
         if (response && pressure_in_sensor) {
-          // Powrót do Twojej logiki Little Endian, skoro Przepływ tak działa
           pressure_in_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step = 0; break;
