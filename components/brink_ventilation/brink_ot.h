@@ -25,13 +25,14 @@ class BrinkOpenTherm : public PollingComponent {
     ot = new OpenTherm(pin_in, pin_out);
     
     // Ustawienie trybu pinów
-    pinMode(pin_in, INPUT);
+   // Zmieniamy na INPUT_PULLUP, aby wymusić stan wysoki, jeśli adapter go nie daje
+    pinMode(pin_in, INPUT_PULLUP);
     pinMode(pin_out, OUTPUT);
     
     // Start komunikacji
     ot->begin(handleInterrupt);
 
-    ESP_LOGI("brink", "Zainicjalizowano OpenTherm na pinach IN:%d, OUT:%d", pin_in, pin_out);
+    ESP_LOGI(("brink", "Zainicjalizowano OpenTherm (PULLUP) IN:%d, OUT:%d", pin_in, pin_out);
   }
 
   void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
