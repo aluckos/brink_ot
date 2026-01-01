@@ -22,7 +22,7 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *supply_temp_sensor{nullptr};
   sensor::Sensor *exhaust_temp_sensor{nullptr};
 
-  BrinkOpenTherm(int in, int out) : PollingComponent(1000), pin_in(in), pin_out(out) {
+  BrinkOpenTherm(int in, int out) : PollingComponent(1500), pin_in(in), pin_out(out) {
     global_brink_ot = this;
   }
 
@@ -39,18 +39,20 @@ class BrinkOpenTherm : public PollingComponent {
     unsigned long response = 0;
     unsigned long request = 0;
     
-    // Utrzymanie sesji
+    // Utrzymanie aktywnej sesji
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
-    delay(20); 
+    delay(50); 
 
     switch(current_step) {
-      case 0: // Nastawa mocy
+      case 0: 
+        // STEROWANIE
         request = ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation);
         ot->sendRequest(request);
         current_step++;
         break;
 
-      case 1: // Temp Nawiewu (ID 80)
+      case 1: 
+        // TEMP NAWIEWU
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0);
         response = ot->sendRequest(request);
         if (response != 0 && supply_temp_sensor != nullptr) {
@@ -59,7 +61,8 @@ class BrinkOpenTherm : public PollingComponent {
         current_step++;
         break;
 
-      case 2: // Temp Wywiewu (ID 82 - Zmienione z 81 na 82 wg Twojego pliku .h)
+      case 2: 
+        // TEMP WYWIEWU
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0);
         response = ot->sendRequest(request);
         if (response != 0 && exhaust_temp_sensor != nullptr) {
@@ -68,19 +71,17 @@ class BrinkOpenTherm : public PollingComponent {
         current_step++;
         break;
 
-      case 3: // Przepływ m3/h (ID 89, Index 52)
+      case 3: 
+        // PRZEPŁYW (ID 89, Indeks 52)
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8);
         response = ot->sendRequest(request);
         if (response != 0 && current_vent_sensor != nullptr) {
-           // Odczytujemy 2 bajty danych (HB i LB)
-           // W logu widzieliśmy 40593490 -> 34 to index, 90 to wartość.
-           // Jeśli 144 (0x90) to za mało, sprawdzamy czy HB (index) nie niesie danych.
-           // Na razie publikujemy czyste LB, ale jako unsigned int.
-           uint16_t raw_val = ot->getUInt(response) & 0xFF; 
+           // Pobieramy TYLKO bajt 2 (Low Byte) z ramki danych
+           // Zgodnie z Twoim życzeniem: brak przeliczania
+           float raw_value = (float)(response & 0xFF);
            
-           // Jeśli to Brink 400 i 144 to wartość max, to może to być skala 0-255?
-           // Sprawdźmy co się stanie jak pomnożymy przez 2.5 (144 * 2.77 = 400)
-           current_vent_sensor->publish_state(raw_val); 
+           current_vent_sensor->publish_state(raw_value);
+           ESP_LOGD("brink", "TSP 52 RAW LB: %.0f", raw_value);
         }
         current_step = 0;
         break;
