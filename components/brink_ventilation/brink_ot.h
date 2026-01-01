@@ -20,7 +20,8 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *supply_temp_sensor{nullptr};
   sensor::Sensor *exhaust_temp_sensor{nullptr};
 
-  BrinkOpenTherm(int in, int out) : PollingComponent(500), pin_in(in), pin_out(out) {}
+  // 1000ms - spokojna komunikacja, raz na sekunde jedno zapytanie
+  BrinkOpenTherm(int in, int out) : PollingComponent(1000), pin_in(in), pin_out(out) {}
 
   void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
   void set_supply_temp_sensor(sensor::Sensor *s) { supply_temp_sensor = s; }
@@ -29,59 +30,51 @@ class BrinkOpenTherm : public PollingComponent {
   void setup() override {
     ot = new OpenTherm(pin_in, pin_out);
     ot->begin(handleInterrupt);
-    ESP_LOGI("brink", "Tryb diagnostyczny RAW startuje...");
-  }
-
-  void log_raw_response(unsigned long request, unsigned long response, const char* name) {
-    if (response == 0) {
-      ESP_LOGW("brink", "Sensor %s: TIMEOUT (brak odpowiedzi)", name);
-    } else {
-      bool valid = ot->isValidResponse(response);
-      ESP_LOGD("brink", "Sensor %s: RAW [%08lX] | Valid: %s | Val: %.2f", 
-               name, response, valid ? "TAK" : "NIE", ot->getFloat(response));
-    }
+    ESP_LOGI("brink", "Startujemy z wymuszonym ID 0 (Status)");
   }
 
   void update() override {
     unsigned long response = 0;
     unsigned long request = 0;
     
+    // ZAWSZE przed każdym krokiem wyślij status, żeby utrzymać komunikację
+    // To jest to "żądanie", o którym wspomniałeś.
+    // 0x0100 oznacza MasterStatus = 1 (aktywne połączenie)
+    ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
+    delay(100); // krótkie czekanie po statusie
+
     switch(current_step) {
       case 0:
-        // ID 71: Zapis wentylacji
+        // Żądanie zapisu mocy (ID 71)
         request = ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation);
         response = ot->sendRequest(request);
-        // Nie logujemy zapisu, bo on zazwyczaj działa
+        if (response != 0) ESP_LOGD("brink", "Zapis mocy OK");
         current_step++;
         break;
 
       case 1:
-        // ID 80: Temp Nawiewu
+        // Żądanie temperatury nawiewu (ID 80)
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0);
         response = ot->sendRequest(request);
-        log_raw_response(request, response, "TempNawiewu");
-        if (ot->isValidResponse(response) && supply_temp_sensor != nullptr)
+        if (response != 0 && ot->isValidResponse(response)) {
            supply_temp_sensor->publish_state(ot->getFloat(response));
+           ESP_LOGD("brink", "Odczyt temp nawiewu: %.2f", ot->getFloat(response));
+        } else {
+           ESP_LOGW("brink", "Brak odpowiedzi na ID 80 (Temp Nawiewu)");
+        }
         current_step++;
         break;
 
       case 2:
-        // ID 82: Temp Wywiewu
-        request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0);
-        response = ot->sendRequest(request);
-        log_raw_response(request, response, "TempWywiewu");
-        if (ot->isValidResponse(response) && exhaust_temp_sensor != nullptr)
-           exhaust_temp_sensor->publish_state(ot->getFloat(response));
-        current_step++;
-        break;
-
-      case 3:
-        // ID 89, TSP 52: Przepływ
+        // Żądanie przepływu (ID 89, TSP 52)
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8);
         response = ot->sendRequest(request);
-        log_raw_response(request, response, "Przeplyw");
-        if (ot->isValidResponse(response) && current_vent_sensor != nullptr)
+        if (response != 0) {
            current_vent_sensor->publish_state(ot->getUInt(response) & 0xFF);
+           ESP_LOGD("brink", "Odczyt przepływu: %d", (int)(ot->getUInt(response) & 0xFF));
+        } else {
+           ESP_LOGW("brink", "Brak odpowiedzi na ID 89 (Przepływ)");
+        }
         current_step = 0;
         break;
     }
@@ -89,7 +82,6 @@ class BrinkOpenTherm : public PollingComponent {
 
   void set_ventilation_level(float level) {
     target_ventilation = level;
-    ESP_LOGI("brink", "Nowa nastawa: %.0f%% (zostanie wyslana w nastepnym cyklu)", level);
   }
 };
 
