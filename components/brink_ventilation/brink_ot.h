@@ -22,7 +22,6 @@ class BrinkOpenTherm : public PollingComponent {
 
   BrinkOpenTherm(int in, int out) : PollingComponent(2000), pin_in(in), pin_out(out) {}
 
-  // Przywracamy brakujące metody set_, których szuka kompilator w main.cpp
   void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
   void set_supply_temp_sensor(sensor::Sensor *s) { supply_temp_sensor = s; }
   void set_exhaust_temp_sensor(sensor::Sensor *s) { exhaust_temp_sensor = s; }
@@ -32,10 +31,14 @@ class BrinkOpenTherm : public PollingComponent {
     pinMode(pin_out, OUTPUT);
     ot = new OpenTherm(pin_in, pin_out);
     
-    // Zgodnie z błędem - tylko jeden argument
-    ot->begin(handleInterrupt); 
+    // Inicjalizacja standardowa
+    ot->begin(handleInterrupt);
     
-    ESP_LOGI("brink", "Inicjalizacja OpenTherm na pinach IN:%d, OUT:%d", pin_in, pin_out);
+    // RĘCZNE WYMUSZENIE ODWRÓCONEJ LOGIKI (Inverted)
+    // To jest kluczowe dla adapterów na tranzystorach/transoptorach
+    ot->setInverted(true); 
+
+    ESP_LOGI("brink", "Inicjalizacja Brink (Tryb INVERTED)");
   }
 
   void update() override {
@@ -43,7 +46,7 @@ class BrinkOpenTherm : public PollingComponent {
     unsigned long response;
 
     switch(step) {
-      case 0: // Status (ID 0)
+      case 0: // Status (ID 0) - Włączamy Master Status
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
         step++;
         break;
@@ -53,6 +56,10 @@ class BrinkOpenTherm : public PollingComponent {
         if (ot->isValidResponse(response)) {
           float val = ot->getUInt(response);
           if (current_vent_sensor != nullptr) current_vent_sensor->publish_state(val);
+          ESP_LOGI("brink", "SUKCES! Moc odczytana: %.1f%%", val);
+        } else {
+          // Jeśli nie ma odpowiedzi, logujemy status fizyczny pinu
+          ESP_LOGD("brink", "Brak odpowiedzi ID 77 (Status pinu IN: %d)", digitalRead(pin_in));
         }
         step++;
         break;
@@ -68,7 +75,9 @@ class BrinkOpenTherm : public PollingComponent {
       case 3: // Zapis mocy (ID 71)
         if (target_ventilation > 0) {
           unsigned int data = ot->temperatureToData(target_ventilation);
-          ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, data));
+          unsigned long req = ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, data);
+          ot->sendRequest(req);
+          ESP_LOGD("brink", "Wysłano nastawę: %.1f%%", target_ventilation);
         }
         step = 0; 
         break;
