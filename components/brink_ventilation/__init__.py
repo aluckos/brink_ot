@@ -18,5 +18,5 @@ CONFIG_SCHEMA = cv.Schema({
 def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID], config['in_pin'], config['out_pin'])
     yield cg.register_component(var, config)
-    # Poprawny link do biblioteki Ihora Melnyka
-    cg.add_library("opentherm_library", None, "https://github.com/ihormelnyk/opentherm_library/archive/refs/heads/master.zip")
+    # Zmieniona metoda dodawania biblioteki - wskazujemy konkretne repozytorium Ihora Melnyka
+    cg.add_library("OpenTherm", None, "https://github.com/ihormelnyk/opentherm_library.git")
