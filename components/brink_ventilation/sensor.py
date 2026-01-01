@@ -2,50 +2,58 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sensor
 from esphome.const import (
-    UNIT_CELSIUS, 
-    ICON_THERMOMETER, 
-    UNIT_PERCENT, 
-    ICON_FAN,
+    CONF_ID,
+    CONF_TYPE,
     DEVICE_CLASS_TEMPERATURE,
-    STATE_CLASS_MEASUREMENT
+    STATE_CLASS_MEASUREMENT,
+    UNIT_CELSIUS,
+    UNIT_PERCENT,
 )
-from . import brink_ns, BrinkOpenTherm, CONF_BRINK_VENTILATION_ID
+from . import BRINK_VENTILATION_ID, BrinkVentilation
 
-CONFIG_SCHEMA = cv.Schema({
-    cv.GenerateID(CONF_BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm),
-    cv.Optional("supply_temp"): sensor.sensor_schema(
+# Definicja typów sensorów
+TYPES = {
+    "T_SUPPLY_IN": sensor.sensor_schema(
         unit_of_measurement=UNIT_CELSIUS,
-        icon=ICON_THERMOMETER,
         accuracy_decimals=1,
         device_class=DEVICE_CLASS_TEMPERATURE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    cv.Optional("exhaust_temp"): sensor.sensor_schema(
+    "T_SUPPLY_OUT": sensor.sensor_schema(
         unit_of_measurement=UNIT_CELSIUS,
-        icon=ICON_THERMOMETER,
         accuracy_decimals=1,
         device_class=DEVICE_CLASS_TEMPERATURE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    cv.Optional("current_vent"): sensor.sensor_schema(
-        unit_of_measurement=UNIT_PERCENT,
-        icon=ICON_FAN,
+    "T_EXHAUST_IN": sensor.sensor_schema(
+        unit_of_measurement=UNIT_CELSIUS,
+        accuracy_decimals=1,
+        device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
+    ),
+    "T_EXHAUST_OUT": sensor.sensor_schema(
+        unit_of_measurement=UNIT_CELSIUS,
+        accuracy_decimals=1,
+        device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
+    ),
+    "RELATIVE_VENTILATION": sensor.sensor_schema(
+        unit_of_measurement="m³/h", # Zmieniamy na m3/h bo kod składa bajty
         accuracy_decimals=0,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-})
+}
 
-def to_code(config):
-    paren = yield cg.get_variable(config[CONF_BRINK_VENTILATION_ID])
+CONFIG_SCHEMA = cv.Schema(
+    {
+        cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkVentilation),
+        cv.Required(CONF_TYPE): cv.one_of(*TYPES, upper=True),
+    }
+).extend(sensor.SENSOR_SCHEMA).extend(cv.COMPONENT_SCHEMA)
 
-    if "supply_temp" in config:
-        sens = yield sensor.new_sensor(config["supply_temp"])
-        cg.add(paren.set_supply_temp_sensor(sens))
-
-    if "exhaust_temp" in config:
-        sens = yield sensor.new_sensor(config["exhaust_temp"])
-        cg.add(paren.set_exhaust_temp_sensor(sens))
-
-    if "current_vent" in config:
-        sens = yield sensor.new_sensor(config["current_vent"])
-        cg.add(paren.set_current_vent_sensor(sens))
+async def to_code(config):
+    parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
+    var = await sensor.new_sensor(config)
+    
+    # Mapowanie typu z YAML na funkcję w C++
+    cg.add(getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")(var))
