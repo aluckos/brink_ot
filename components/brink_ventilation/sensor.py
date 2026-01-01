@@ -3,7 +3,7 @@ import esphome.config_validation as cv
 from esphome.components import sensor
 from esphome.const import (
     CONF_ID, CONF_TYPE, CONF_NAME, DEVICE_CLASS_TEMPERATURE, 
-    UNIT_CELSIUS
+    STATE_CLASS_MEASUREMENT, UNIT_CELSIUS
 )
 from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 
@@ -17,7 +17,9 @@ TYPES = {
     "PRESSURE_IN": ["Brink Ciśnienie", "Pa", 0, None],
 }
 
-CONFIG_SCHEMA = sensor.sensor_schema().extend({
+CONFIG_SCHEMA = sensor.sensor_schema(
+    state_class=STATE_CLASS_MEASUREMENT,
+).extend({
     cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm),
     cv.Required(CONF_TYPE): cv.one_of(*TYPES, upper=True),
 }).extend(cv.COMPONENT_SCHEMA)
@@ -26,18 +28,14 @@ async def to_code(config):
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
     conf_data = TYPES[config[CONF_TYPE]]
     
-    # Tworzymy obiekt sensora korzystając z wbudowanej funkcji ESPHome
+    # Tworzymy obiekt sensora - ESPHome samo wstawi poprawne STATE_CLASS_MEASUREMENT do C++
     var = await sensor.new_sensor(config)
     
-    # Ustawiamy parametry, których new_sensor nie ustawia automatycznie
+    # Ustawiamy pozostałe parametry z naszej mapy TYPES
     cg.add(var.set_unit_of_measurement(conf_data[1]))
     cg.add(var.set_accuracy_decimals(conf_data[2]))
     if conf_data[3] is not None:
         cg.add(var.set_device_class(conf_data[3]))
-    
-    # ROZWIĄZANIE PROBLEMU: 
-    # Jawnie wskazujemy kompilatorowi C++, że ma użyć wartości enum, a nie tekstu.
-    cg.add(var.set_state_class(cg.global_ns.esphome.sensor.STATE_CLASS_MEASUREMENT))
     
     # Łączymy sensor z odpowiednią metodą w pliku brink_ot.h
     func = getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")
