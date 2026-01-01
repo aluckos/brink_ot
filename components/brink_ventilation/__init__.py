@@ -18,5 +18,5 @@ CONFIG_SCHEMA = cv.Schema({
 def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID], config['in_pin'], config['out_pin'])
     yield cg.register_component(var, config)
-    # Pobieranie biblioteki jako ZIP - omija błędy 'git clone' i 'Username for github'
-    cg.add_library(None, None, "https://github.com/ihormaze/OpenTherm/archive/refs/heads/master.zip")
+    # Dodajemy nazwę 'OpenTherm', wersję None i link do ZIPa
+    cg.add_library("OpenTherm", None, "https://github.com/ihormaze/OpenTherm/archive/refs/heads/master.zip")
