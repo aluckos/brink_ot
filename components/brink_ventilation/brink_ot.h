@@ -24,7 +24,6 @@ class BrinkOpenTherm : public PollingComponent {
   int pin_in, pin_out;
   int current_step = 0;
   float target_ventilation = 28.0f; 
-  uint16_t temp_hb = 0; // Pomocnicza do składania 2 bajtów
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
   sensor::Sensor *t_supply_out_sensor{nullptr};
@@ -52,48 +51,51 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
+    // Status (ID 0) musi być wysyłany często, by utrzymać sesję
+    ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
+    delay(20);
 
     switch(current_step) {
-      case 0: // Nastawa mocy (ID 71)
+      case 0: // Nastawa mocy
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
 
-      case 1: // T1 (ID 80)
+      case 1: // T1 - Supply In (ID 80)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 2: // T3 (ID 82)
+      case 2: // T2 - Supply Out (ID 81)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
+        if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
+        current_step++; break;
+
+      case 3: // T3 - Exhaust In (ID 82)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 3: // PRZEPŁYW Bajt 1 (ID 89, TSP 52)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-        if (response) temp_hb = (ot->getUInt(response) & 0xFF) << 8;
+      case 4: // T4 - Exhaust Out (ID 83)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
+        if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 4: // PRZEPŁYW Bajt 2 (ID 89, TSP 53) + Publikacja
+      case 5: // PRZEPŁYW (ID 89, TSP 53)
+        // Czytamy TSP 53 (Current position/outlet volume)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response && current_flow_sensor) {
-            uint16_t full_val = temp_hb | (ot->getUInt(response) & 0xFF);
-            if (full_val < 1000) current_flow_sensor->publish_state(full_val);
+            // Wyciągamy samą wartość danych (ostatnie 8 bitów)
+            uint16_t flow = (uint16_t)(response & 0xFF);
+            if (flow > 0) current_flow_sensor->publish_state(flow);
         }
         current_step++; break;
 
-      case 5: // T2 (ID 89, TSP 56) - Indoors Temp
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 56 << 8));
-        if (response && t_supply_out_sensor) {
-            float t = (float)(ot->getUInt(response) & 0xFF) - 100.0f;
-            if (t > -30 && t < 70) t_supply_out_sensor->publish_state(t);
-        }
-        current_step++; break;
-
-      case 6: // T4 (ID 89, TSP 55) - Atmo Temp
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 55 << 8));
-        if (response && t_exhaust_out_sensor) {
-            float t = (float)(ot->getUInt(response) & 0xFF) - 100.0f;
-            if (t > -30 && t < 70) t_exhaust_out_sensor->publish_state(t);
+      case 6: // CIŚNIENIE (ID 89, TSP 65)
+        // Czytamy TSP 65 (Current pressure output duct)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
+        if (response && pressure_in_sensor) {
+            uint16_t pressure = (uint16_t)(response & 0xFF);
+            if (pressure > 0) pressure_in_sensor->publish_state(pressure);
         }
         current_step = 0; break;
     }
