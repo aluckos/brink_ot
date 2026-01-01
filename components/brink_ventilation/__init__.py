@@ -2,6 +2,7 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
 
+# Przestrzeń nazw
 brink_ventilation_ns = cg.esphome_ns.namespace("brink_ventilation")
 BrinkOpenTherm = brink_ventilation_ns.class_("BrinkOpenTherm", cg.PollingComponent)
 
@@ -14,6 +15,7 @@ CONFIG_SCHEMA = cv.Schema({
 }).extend(cv.polling_component_schema("1500ms"))
 
 async def to_code(config):
-    var = cg.new_variable(config[CONF_ID])
+    # Kluczowa zmiana: new_Pvariable zamiast new_variable
+    var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     cg.add(var.set_pins(config["in_pin"], config["out_pin"]))
