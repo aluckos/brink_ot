@@ -19,9 +19,9 @@ TYPES = {
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm),
     cv.Required(CONF_TYPE): cv.one_of(*TYPES, upper=True),
-}).extend(sensor.SENSOR_SCHEMA)
+}).extend(cv.COMPONENT_SCHEMA) # Zmienione z sensor.SENSOR_SCHEMA
 
 async def to_code(config):
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
-    var = await sensor.new_sensor(config)
+    var = await sensor.new_sensor(config[CONF_TYPE]) # Używamy schematu z TYPES
     cg.add(getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")(var))
