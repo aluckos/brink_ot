@@ -6,7 +6,11 @@
 namespace esphome {
 namespace brink_ventilation {
 
-static void IRAM_ATTR handleInterrupt() { }
+class BrinkOpenTherm; 
+
+// Globalny wskaźnik dla przerwania - tak jak robił to raf1000
+static BrinkOpenTherm *global_brink_ot = nullptr;
+static void IRAM_ATTR handleInterrupt();
 
 class BrinkOpenTherm : public PollingComponent {
  public:
@@ -20,70 +24,71 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *supply_temp_sensor{nullptr};
   sensor::Sensor *exhaust_temp_sensor{nullptr};
 
-  // 1000ms - spokojna komunikacja, raz na sekunde jedno zapytanie
-  BrinkOpenTherm(int in, int out) : PollingComponent(1000), pin_in(in), pin_out(out) {}
-
-  void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
-  void set_supply_temp_sensor(sensor::Sensor *s) { supply_temp_sensor = s; }
-  void set_exhaust_temp_sensor(sensor::Sensor *s) { exhaust_temp_sensor = s; }
+  BrinkOpenTherm(int in, int out) : PollingComponent(1000), pin_in(in), pin_out(out) {
+    global_brink_ot = this;
+  }
 
   void setup() override {
     ot = new OpenTherm(pin_in, pin_out);
+    // Rejestracja przerwania w stylu raf1000
     ot->begin(handleInterrupt);
-    ESP_LOGI("brink", "Startujemy z wymuszonym ID 0 (Status)");
+    ESP_LOGI("brink", "Inicjalizacja systemu przerwań...");
   }
 
   void update() override {
     unsigned long response = 0;
     unsigned long request = 0;
     
-    // ZAWSZE przed każdym krokiem wyślij status, żeby utrzymać komunikację
-    // To jest to "żądanie", o którym wspomniałeś.
-    // 0x0100 oznacza MasterStatus = 1 (aktywne połączenie)
+    // raf1000 zawsze wysyłał status 0x0100 przed sensorami
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
-    delay(100); // krótkie czekanie po statusie
+    delay(50); 
 
     switch(current_step) {
-      case 0:
-        // Żądanie zapisu mocy (ID 71)
+      case 0: // STEROWANIE
         request = ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation);
-        response = ot->sendRequest(request);
-        if (response != 0) ESP_LOGD("brink", "Zapis mocy OK");
+        ot->sendRequest(request);
         current_step++;
         break;
 
-      case 1:
-        // Żądanie temperatury nawiewu (ID 80)
+      case 1: // TEMP NAWIEWU (ID 80)
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0);
         response = ot->sendRequest(request);
-        if (response != 0 && ot->isValidResponse(response)) {
-           supply_temp_sensor->publish_state(ot->getFloat(response));
-           ESP_LOGD("brink", "Odczyt temp nawiewu: %.2f", ot->getFloat(response));
-        } else {
-           ESP_LOGW("brink", "Brak odpowiedzi na ID 80 (Temp Nawiewu)");
+        if (response != 0) {
+           float val = ot->getFloat(response);
+           if (supply_temp_sensor != nullptr) supply_temp_sensor->publish_state(val);
+           ESP_LOGD("brink", "ID 80 RAW: %08lX, Temp: %.1f", response, val);
         }
         current_step++;
         break;
 
-      case 2:
-        // Żądanie przepływu (ID 89, TSP 52)
+      case 2: // PRZEPŁYW (ID 89, TSP 52)
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8);
         response = ot->sendRequest(request);
         if (response != 0) {
-           current_vent_sensor->publish_state(ot->getUInt(response) & 0xFF);
-           ESP_LOGD("brink", "Odczyt przepływu: %d", (int)(ot->getUInt(response) & 0xFF));
-        } else {
-           ESP_LOGW("brink", "Brak odpowiedzi na ID 89 (Przepływ)");
+           int vol = ot->getUInt(response) & 0xFF;
+           if (current_vent_sensor != nullptr) current_vent_sensor->publish_state(vol);
+           ESP_LOGD("brink", "ID 89 RAW: %08lX, Vol: %d", response, vol);
         }
         current_step = 0;
         break;
     }
   }
 
+  void handle_int() {
+    if (ot) ot->handleInterrupt();
+  }
+
   void set_ventilation_level(float level) {
     target_ventilation = level;
   }
 };
+
+// Realizacja przerwania poza klasą dla stabilności ESP8266
+static void IRAM_ATTR handleInterrupt() {
+  if (global_brink_ot != nullptr) {
+    global_brink_ot->handle_int();
+  }
+}
 
 class BrinkVentilationNumber : public number::Number {
  public:
