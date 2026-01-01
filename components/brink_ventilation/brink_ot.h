@@ -25,8 +25,7 @@ class BrinkOpenTherm : public PollingComponent {
     ot = new OpenTherm(pin_in, pin_out);
     
     // Ustawienie trybu pinów
-   // Zmieniamy na INPUT_PULLUP, aby wymusić stan wysoki, jeśli adapter go nie daje
-    pinMode(pin_in, INPUT_PULLUP);
+    pinMode(pin_in, INPUT);
     pinMode(pin_out, OUTPUT);
     
     // Start komunikacji
