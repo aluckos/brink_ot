@@ -31,7 +31,6 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *t_exhaust_out_sensor{nullptr};
   sensor::Sensor *current_flow_sensor{nullptr};
   sensor::Sensor *pressure_in_sensor{nullptr};
-  // Przywrócony wskaźnik dla sensora tekstowego
   text_sensor::TextSensor *status_text_sensor{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
@@ -52,55 +51,56 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
-    // Kluczowe dla Flair: Inicjalizacja konfiguracji (ID 3)
-    ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)3, 0));
+    // Podtrzymanie komunikacji (ID 0)
+    ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(20);
 
     switch(current_step) {
-      case 0:
+      case 0: // Nastawa mocy
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
-        if (status_text_sensor) status_text_sensor->publish_state("Połączono");
         current_step++; break;
 
-      case 1: // T1
+      case 1: // T1 - Czerpnia (Standard ID 80)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 2: // T2 (TSP 25)
+      case 2: // T2 - Nawiew (Próba TSP 25)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 25 << 8));
         if (response) {
-            uint16_t u16 = ot->getUInt(response);
-            if (u16 > 0 && u16 < 3000) t_supply_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
+            uint16_t u16 = response & 0xFFFF;
+            if (u16 > 0 && u16 < 4000) t_supply_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
         }
         current_step++; break;
 
-      case 3: // T3
+      case 3: // T3 - Wywiew (Standard ID 82)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 4: // T4 (TSP 27)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 27 << 8));
+      case 4: // T4 - Wyrzutnia (Próba TSP 29 - zmiana z 27)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 29 << 8));
         if (response) {
-            uint16_t u16 = ot->getUInt(response);
-            if (u16 > 0 && u16 < 3000) t_exhaust_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
+            uint16_t u16 = response & 0xFFFF;
+            if (u16 > 0 && u16 < 4000) t_exhaust_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
         }
         current_step++; break;
 
-      case 5: // Przepływ (TSP 53)
+      case 5: // PRZEPŁYW (TSP 53 - PRZYWRÓCONY)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response) {
-            uint16_t u16 = ot->getUInt(response);
+            uint16_t u16 = response & 0xFFFF;
+            // Jeśli u16 == 13568 (0x3500), to znaczy że pusta ramka. 
+            // Prawidłowy przepływ powinien być mniejszy niż 1000.
             if (u16 > 0 && u16 < 1000) current_flow_sensor->publish_state(u16);
         }
         current_step++; break;
 
-      case 6: // Ciśnienie (TSP 65)
+      case 6: // CIŚNIENIE (TSP 65 - PRZYWRÓCONY)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
         if (response) {
-            uint16_t u16 = ot->getUInt(response);
-            if (u16 > 0 && u16 < 1000) pressure_in_sensor->publish_state(u16);
+            uint16_t u16 = response & 0xFFFF;
+            if (u16 > 0 && u16 < 2000) pressure_in_sensor->publish_state(u16);
         }
         current_step = 0; break;
     }
