@@ -87,16 +87,17 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-      case 6:
+      case 6: // PRZEPŁYW (Działa)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response && current_flow_sensor) {
           current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-      case 7: // Zamiast Ciśnienia - odczytujemy RPM wentylatora nawiewnego (ID 85)
+
+      case 7: // RPM zamiast Ciśnienia (ID 85 z Twojej listy)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)85, 0));
         if (response && pressure_in_sensor) {
-          // Używamy sensora ciśnienia jako wyświetlacza RPM dla testu
+          // getUInt odczytuje 16-bitową wartość bez znaku (RPM)
           pressure_in_sensor->publish_state((float)ot->getUInt(response));
         }
         current_step = 0; break;
