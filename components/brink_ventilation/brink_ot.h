@@ -32,7 +32,7 @@ class BrinkOpenTherm : public PollingComponent {
     // Start komunikacji
     ot->begin(handleInterrupt);
 
-    ESP_LOGI(("brink", "Zainicjalizowano OpenTherm (PULLUP) IN:%d, OUT:%d", pin_in, pin_out);
+    ESP_LOGI("brink", "Zainicjalizowano OpenTherm (PULLUP) IN:%d, OUT:%d", pin_in, pin_out);
   }
 
   void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
