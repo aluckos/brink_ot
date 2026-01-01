@@ -8,7 +8,7 @@ namespace brink_ventilation {
 
 class BrinkOpenTherm; 
 
-// Globalny wskaźnik dla przerwania - tak jak robił to raf1000
+// Globalny wskaźnik dla przerwania
 static BrinkOpenTherm *global_brink_ot = nullptr;
 static void IRAM_ATTR handleInterrupt();
 
@@ -28,18 +28,23 @@ class BrinkOpenTherm : public PollingComponent {
     global_brink_ot = this;
   }
 
+  // PRZYWRÓCONE METODY DLA ESPHOME
+  void set_supply_temp_sensor(sensor::Sensor *s) { supply_temp_sensor = s; }
+  void set_exhaust_temp_sensor(sensor::Sensor *s) { exhaust_temp_sensor = s; }
+  void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
+
   void setup() override {
     ot = new OpenTherm(pin_in, pin_out);
-    // Rejestracja przerwania w stylu raf1000
+    // Rejestracja przerwania
     ot->begin(handleInterrupt);
-    ESP_LOGI("brink", "Inicjalizacja systemu przerwań...");
+    ESP_LOGI("brink", "Inicjalizacja systemu przerwań i sensorów...");
   }
 
   void update() override {
     unsigned long response = 0;
     unsigned long request = 0;
     
-    // raf1000 zawsze wysyłał status 0x0100 przed sensorami
+    // Utrzymanie sesji
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(50); 
 
@@ -57,6 +62,8 @@ class BrinkOpenTherm : public PollingComponent {
            float val = ot->getFloat(response);
            if (supply_temp_sensor != nullptr) supply_temp_sensor->publish_state(val);
            ESP_LOGD("brink", "ID 80 RAW: %08lX, Temp: %.1f", response, val);
+        } else {
+           ESP_LOGW("brink", "ID 80: TIMEOUT");
         }
         current_step++;
         break;
@@ -68,6 +75,8 @@ class BrinkOpenTherm : public PollingComponent {
            int vol = ot->getUInt(response) & 0xFF;
            if (current_vent_sensor != nullptr) current_vent_sensor->publish_state(vol);
            ESP_LOGD("brink", "ID 89 RAW: %08lX, Vol: %d", response, vol);
+        } else {
+           ESP_LOGW("brink", "ID 89: TIMEOUT");
         }
         current_step = 0;
         break;
@@ -83,7 +92,7 @@ class BrinkOpenTherm : public PollingComponent {
   }
 };
 
-// Realizacja przerwania poza klasą dla stabilności ESP8266
+// Obsługa przerwania
 static void IRAM_ATTR handleInterrupt() {
   if (global_brink_ot != nullptr) {
     global_brink_ot->handle_int();
