@@ -50,41 +50,39 @@ class BrinkOpenTherm : public PollingComponent {
   }
 
   void update() override {
-    unsigned long response = 0;
-    // Podtrzymanie komunikacji
-    ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
-    delay(20);
-
+    // Korzystamy z dedykowanych funkcji Twojej biblioteki
     switch(current_step) {
-      case 0: // Sterowanie (ID 71)
-        ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
+      case 0: // Nastawa mocy - dedykowana funkcja setVentilation
+        ot->setVentilation((unsigned int)target_ventilation);
         current_step++; break;
 
-      case 1: // T1 (Standard ID 80)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
-        if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
+      case 1: // T1 - Supply Inlet
+        t_supply_in_sensor->publish_state(ot->getVentSupplyInTemperature());
         current_step++; break;
 
-      case 2: // T3 (Standard ID 82)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
-        if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
+      case 2: // T2 - Supply Outlet (Jeśli 0, spróbujemy TSP w następnym kroku)
+        t_supply_out_sensor->publish_state(ot->getVentSupplyOutTemperature());
         current_step++; break;
 
-      case 3: // PRZEPŁYW (TSP 53 z Member ID 1)
-        // 0x1035 to: Member ID 1 (starszy bajt 0x10) + ID 89 (0x35)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 0x1035));
-        if (response) {
-            uint16_t val = (uint16_t)(response & 0xFFFF);
-            // Wykluczamy ramki puste (0x3500 czyli 13568)
-            if (val > 0 && val < 1000) current_flow_sensor->publish_state(val);
+      case 3: // T3 - Exhaust Inlet
+        t_exhaust_in_sensor->publish_state(ot->getVentExhaustInTemperature());
+        current_step++; break;
+
+      case 4: // T4 - Exhaust Outlet
+        t_exhaust_out_sensor->publish_state(ot->getVentExhaustOutTemperature());
+        current_step++; break;
+
+      case 5: // PRZEPŁYW - używamy dedykowanej funkcji getBrink2TSP dla CurrentVol (52)
+        {
+          uint16_t flow = ot->getBrink2TSP(BrinkTSPindex::CurrentVol);
+          if (flow > 0 && flow < 1000) current_flow_sensor->publish_state(flow);
         }
         current_step++; break;
 
-      case 4: // CIŚNIENIE (TSP 65 z Member ID 1)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 0x1041));
-        if (response) {
-            uint16_t val = (uint16_t)(response & 0xFFFF);
-            if (val > 0 && val < 1000) pressure_in_sensor->publish_state(val);
+      case 6: // CIŚNIENIE - używamy CPID (64)
+        {
+          uint16_t pressure = ot->getBrink2TSP(BrinkTSPindex::CPID);
+          if (pressure < 1000) pressure_in_sensor->publish_state(pressure);
         }
         current_step = 0; break;
     }
