@@ -17,6 +17,9 @@ class BrinkOpenTherm : public PollingComponent {
   int pin_out;
   int current_step = 0;
   float target_ventilation = 0.0f;
+  
+  // Zmienna pomocnicza do trzymania młodszego bajtu
+  uint8_t flow_lb = 0;
 
   sensor::Sensor *current_vent_sensor{nullptr};
   sensor::Sensor *supply_temp_sensor{nullptr};
@@ -39,20 +42,17 @@ class BrinkOpenTherm : public PollingComponent {
     unsigned long response = 0;
     unsigned long request = 0;
     
-    // Utrzymanie aktywnej sesji
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(50); 
 
     switch(current_step) {
-      case 0: 
-        // STEROWANIE
+      case 0: // Nastawa
         request = ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation);
         ot->sendRequest(request);
         current_step++;
         break;
 
-      case 1: 
-        // TEMP NAWIEWU
+      case 1: // Temp Nawiewu
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0);
         response = ot->sendRequest(request);
         if (response != 0 && supply_temp_sensor != nullptr) {
@@ -61,8 +61,7 @@ class BrinkOpenTherm : public PollingComponent {
         current_step++;
         break;
 
-      case 2: 
-        // TEMP WYWIEWU
+      case 2: // Temp Wywiewu
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0);
         response = ot->sendRequest(request);
         if (response != 0 && exhaust_temp_sensor != nullptr) {
@@ -71,17 +70,26 @@ class BrinkOpenTherm : public PollingComponent {
         current_step++;
         break;
 
-      case 3: 
-        // PRZEPŁYW (ID 89, Indeks 52)
+      case 3: // Przepływ KROK A: Pobierz LB (Indeks 52)
         request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8);
         response = ot->sendRequest(request);
+        if (response != 0) {
+           flow_lb = (uint8_t)(response & 0xFF);
+        }
+        current_step++;
+        break;
+
+      case 4: // Przepływ KROK B: Pobierz HB (Indeks 53) i wyślij całość
+        request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8);
+        response = ot->sendRequest(request);
         if (response != 0 && current_vent_sensor != nullptr) {
-           // Pobieramy TYLKO bajt 2 (Low Byte) z ramki danych
-           // Zgodnie z Twoim życzeniem: brak przeliczania
-           float raw_value = (float)(response & 0xFF);
+           uint8_t flow_hb = (uint8_t)(response & 0xFF);
            
-           current_vent_sensor->publish_state(raw_value);
-           ESP_LOGD("brink", "TSP 52 RAW LB: %.0f", raw_value);
+           // Składanie: HB * 256 + LB
+           float total_flow = (float)((flow_hb << 8) | flow_lb);
+           
+           current_vent_sensor->publish_state(total_flow);
+           ESP_LOGD("brink", "Przepływ: HB=%d, LB=%d, Wynik=%.0f m3/h", flow_hb, flow_lb, total_flow);
         }
         current_step = 0;
         break;
