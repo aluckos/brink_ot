@@ -31,6 +31,8 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *t_exhaust_out_sensor{nullptr};
   sensor::Sensor *current_flow_sensor{nullptr};
   sensor::Sensor *pressure_in_sensor{nullptr};
+  // Przywrócony wskaźnik dla sensora tekstowego
+  text_sensor::TextSensor *status_text_sensor{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
   void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
@@ -39,6 +41,7 @@ class BrinkOpenTherm : public PollingComponent {
   void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; }
   void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
   void set_pressure_in_sensor(sensor::Sensor *s) { pressure_in_sensor = s; }
+  void set_status_text_sensor(text_sensor::TextSensor *s) { status_text_sensor = s; }
   void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
 
   void setup() override {
@@ -49,31 +52,30 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
-    // KROK ZERO: Przedstawiamy się jako Master wspierający TSP (ID 2 i 3)
+    // Kluczowe dla Flair: Inicjalizacja konfiguracji (ID 3)
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)3, 0));
     delay(20);
 
     switch(current_step) {
-      case 0: // Nastawa mocy
+      case 0:
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
+        if (status_text_sensor) status_text_sensor->publish_state("Połączono");
         current_step++; break;
 
-      case 1: // T1 (Standard)
+      case 1: // T1
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 2: // T2 (TSP 25) - Próba odczytu przez ID 89 w innym formacie
+      case 2: // T2 (TSP 25)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 25 << 8));
         if (response) {
             uint16_t u16 = ot->getUInt(response);
-            if (u16 != 0 && u16 < 32768) {
-                t_supply_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
-            }
+            if (u16 > 0 && u16 < 3000) t_supply_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
         }
         current_step++; break;
 
-      case 3: // T3 (Standard)
+      case 3: // T3
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
@@ -82,9 +84,7 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 27 << 8));
         if (response) {
             uint16_t u16 = ot->getUInt(response);
-            if (u16 != 0 && u16 < 32768) {
-                t_exhaust_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
-            }
+            if (u16 > 0 && u16 < 3000) t_exhaust_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
         }
         current_step++; break;
 
@@ -92,7 +92,7 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response) {
             uint16_t u16 = ot->getUInt(response);
-            if (u16 != 0 && u16 < 32768) current_flow_sensor->publish_state(u16);
+            if (u16 > 0 && u16 < 1000) current_flow_sensor->publish_state(u16);
         }
         current_step++; break;
 
@@ -100,7 +100,7 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
         if (response) {
             uint16_t u16 = ot->getUInt(response);
-            if (u16 != 0 && u16 < 32768) pressure_in_sensor->publish_state(u16);
+            if (u16 > 0 && u16 < 1000) pressure_in_sensor->publish_state(u16);
         }
         current_step = 0; break;
     }
