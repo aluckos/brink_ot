@@ -2,9 +2,11 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
 
+# Definicja przestrzeni nazw
 brink_ns = cg.esphome_ns.namespace('brink_ventilation')
 BrinkOpenTherm = brink_ns.class_('BrinkOpenTherm', cg.PollingComponent)
 
+# Stała współdzielona między plikami sensor.py i number.py
 CONF_BRINK_VENTILATION_ID = "brink_ventilation_id"
 
 CONFIG_SCHEMA = cv.Schema({
@@ -16,4 +18,5 @@ CONFIG_SCHEMA = cv.Schema({
 def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID], config['in_pin'], config['out_pin'])
     yield cg.register_component(var, config)
+    # Dodanie biblioteki OpenTherm
     cg.add_library("ihormaze/OpenTherm Library", "1.1.5")
