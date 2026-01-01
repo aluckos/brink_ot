@@ -31,7 +31,7 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *t_exhaust_in_sensor{nullptr};
   sensor::Sensor *t_exhaust_out_sensor{nullptr};
   sensor::Sensor *current_flow_sensor{nullptr};
-  sensor::Sensor *pressure_in_sensor{nullptr}; // Tu będziemy wysyłać RPM dla testu
+  sensor::Sensor *pressure_in_sensor{nullptr};
   text_sensor::TextSensor *status_text_sensor{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
@@ -63,42 +63,45 @@ class BrinkOpenTherm : public PollingComponent {
       case 0:
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
-      case 1:
+      case 1: // T1 - Działa na ID 80
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 2: // T2 - Test TSP 45 (często T_supply_out we Flair)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 45 << 8));
+      case 2: // T2 - Testujemy TSP 41
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 41 << 8));
         if (response && t_supply_out_sensor) {
-          t_supply_out_sensor->publish_state((float)(response & 0xFF));
+          // Brink często podaje temp w formacie: wartość / 2 lub bezpośrednio
+          t_supply_out_sensor->publish_state((float)(response & 0xFF) / 1.0f); 
         }
         current_step++; break;
-      case 3:
+      case 3: // T3 - Działa na ID 82
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 4: // T4 - Test TSP 46 (często T_exhaust_out we Flair)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 46 << 8));
+      case 4: // T4 - Testujemy TSP 42
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 42 << 8));
         if (response && t_exhaust_out_sensor) {
-          t_exhaust_out_sensor->publish_state((float)(response & 0xFF));
+          t_exhaust_out_sensor->publish_state((float)(response & 0xFF) / 1.0f);
         }
         current_step++; break;
-      case 5:
+      case 5: // PRZEPŁYW LB (TSP 52)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-      case 6: // PRZEPŁYW (Działa)
+      case 6: // PRZEPŁYW HB (TSP 53)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response && current_flow_sensor) {
           current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-
-      case 7: // RPM zamiast Ciśnienia (ID 85 z Twojej listy)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)85, 0));
+      case 7: // RPM LB - Testujemy TSP 49
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 49 << 8));
+        if (response) temp_lb = (uint8_t)(response & 0xFF);
+        current_step++; break;
+      case 8: // RPM HB - Testujemy TSP 50
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 50 << 8));
         if (response && pressure_in_sensor) {
-          // getUInt odczytuje 16-bitową wartość bez znaku (RPM)
-          pressure_in_sensor->publish_state((float)ot->getUInt(response));
+          pressure_in_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step = 0; break;
     }
