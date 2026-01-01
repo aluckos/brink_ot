@@ -4,9 +4,7 @@ from esphome.components import text_sensor
 from esphome.const import CONF_ID, CONF_TYPE
 from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 
-TYPES = {
-    "STATUS": "Brink Status Pracy",
-}
+TYPES = {"STATUS": "Brink Status Pracy"}
 
 CONFIG_SCHEMA = text_sensor.text_sensor_schema().extend({
     cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm),
