@@ -1,7 +1,7 @@
-#pragma once
-
 #include "esphome.h"
 #include "OpenTherm.h"
+
+#pragma once
 
 namespace esphome {
 namespace brink_ventilation {
@@ -20,7 +20,7 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *supply_temp_sensor{nullptr};
   sensor::Sensor *exhaust_temp_sensor{nullptr};
 
-  // Interwał 200ms - każdy krok wykonuje się błyskawicznie
+  // Interwał 200ms
   BrinkOpenTherm(int in, int out) : PollingComponent(200), pin_in(in), pin_out(out) {}
 
   void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
@@ -35,41 +35,56 @@ class BrinkOpenTherm : public PollingComponent {
   void update() override {
     unsigned long response = 0;
     
-    // Krok 0 zawsze wysyła nastawę, aby Brink czuł, że Master żyje
-    if (current_step == 0) {
-      // ID 71: Write ventilation level
-      ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
-      current_step++;
-    } 
-    else if (current_step == 1) {
-      // ID 80: Supply Temp
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
-      if (ot->isValidResponse(response) && supply_temp_sensor != nullptr) {
-        supply_temp_sensor->publish_state(ot->getFloat(response));
-      }
-      current_step++;
-    }
-    else if (current_step == 2) {
-      // ID 82: Exhaust Temp
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
-      if (ot->isValidResponse(response) && exhaust_temp_sensor != nullptr) {
-        exhaust_temp_sensor->publish_state(ot->getFloat(response));
-      }
-      current_step++;
-    }
-    else if (current_step == 3) {
-      // ID 89, TSP 52: Current Flow
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-      if (ot->isValidResponse(response) && current_vent_sensor != nullptr) {
-        // Spróbujmy wyciągnąć wartość z obu bajtów jeśli 0xFF zawiedzie
-        current_vent_sensor->publish_state(ot->getUInt(response));
-      }
-      current_step = 0;
+    switch(current_step) {
+      case 0:
+        // ID 71: Write ventilation level
+        ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
+        current_step++;
+        break;
+
+      case 1:
+        // ID 80: Supply Temp
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
+        if (ot->isValidResponse(response) && supply_temp_sensor != nullptr) {
+          supply_temp_sensor->publish_state(ot->getFloat(response));
+        }
+        current_step++;
+        break;
+
+      case 2:
+        // ID 82: Exhaust Temp
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
+        if (ot->isValidResponse(response) && exhaust_temp_sensor != nullptr) {
+          exhaust_temp_sensor->publish_state(ot->getFloat(response));
+        }
+        current_step++;
+        break;
+
+      case 3:
+        // ID 89, TSP 52: Current Flow
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
+        if (ot->isValidResponse(response) && current_vent_sensor != nullptr) {
+          current_vent_sensor->publish_state(ot->getUInt(response) & 0xFF);
+        }
+        current_step = 0;
+        break;
     }
   }
 
   void set_ventilation_level(float level) {
     target_ventilation = level;
-    // Nie wysyłamy tutaj - czekamy na krok 0 w update()
   }
 };
+
+class BrinkVentilationNumber : public number::Number {
+ public:
+  BrinkOpenTherm *parent_;
+  void set_parent(BrinkOpenTherm *parent) { parent_ = parent; }
+  void control(float value) override {
+    this->publish_state(value);
+    parent_->set_ventilation_level(value);
+  }
+};
+
+} // namespace brink_ventilation
+} // namespace esphome
