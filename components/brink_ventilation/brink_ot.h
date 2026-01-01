@@ -24,7 +24,7 @@ class BrinkOpenTherm : public PollingComponent {
   int pin_in, pin_out;
   int current_step = 0;
   float target_ventilation = 25.0f;
-  uint8_t temp_lb = 0; // Przechowuje młodszy bajt (Little Endian logic)
+  uint8_t temp_lb = 0;
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
   sensor::Sensor *t_supply_out_sensor{nullptr};
@@ -52,13 +52,9 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
-    // Podtrzymanie komunikacji i status
+    // Podstawowe zapytanie o status (ID 0)
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
-    
-    // Publikacja statusu tekstowego, jeśli sensor jest podpięty
-    if (status_text_sensor && current_step == 0) {
-        status_text_sensor->publish_state("Praca");
-    }
+    delay(20);
 
     switch(current_step) {
       case 0:
@@ -80,26 +76,28 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
         if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 5: // PRZEPŁYW LB
+      
+      // TWOJA SPRAWDZONA LOGIKA TSP
+      case 5:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-      case 6: // PRZEPŁYW HB + SKŁADANIE
+      case 6:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response && current_flow_sensor) {
-            uint16_t val = ((uint16_t)(response & 0xFF) << 8) | temp_lb;
-            if (val < 1000) current_flow_sensor->publish_state(val);
+            // Dokładnie to co napisałeś: (Bajt z TSP 53 << 8) | (Bajt z TSP 52)
+            current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-      case 7: // CIŚNIENIE LB
+      case 7:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 64 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-      case 8: // CIŚNIENIE HB + SKŁADANIE
+      case 8:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
         if (response && pressure_in_sensor) {
-            uint16_t val = ((uint16_t)(response & 0xFF) << 8) | temp_lb;
-            if (val < 1000) pressure_in_sensor->publish_state(val);
+            // Dokładnie to co napisałeś: (Bajt z TSP 65 << 8) | (Bajt z TSP 64)
+            pressure_in_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step = 0; break;
     }
