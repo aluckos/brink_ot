@@ -23,7 +23,7 @@ class BrinkOpenTherm : public PollingComponent {
   OpenTherm *ot = nullptr;
   int pin_in, pin_out;
   int current_step = 0;
-  float target_ventilation = 0.0f;
+  float target_ventilation = 25.0f;
   uint8_t temp_lb = 0;
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
