@@ -24,7 +24,6 @@ class BrinkOpenTherm : public PollingComponent {
   int pin_in, pin_out;
   int current_step = 0;
   float target_ventilation = 25.0f; 
-  uint16_t temp_raw = 0;
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
   sensor::Sensor *t_supply_out_sensor{nullptr};
@@ -52,6 +51,7 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
+    // Status - zapytanie podtrzymujące komunikację
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(20);
 
@@ -60,41 +60,45 @@ class BrinkOpenTherm : public PollingComponent {
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
 
-      case 1: // T1 - Standard (Jeśli działa, zostawiamy)
+      case 1: // T1 - Czerpnia
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 2: // T2 - Nawiew (Próba TSP 25)
+      case 2: // T2 - Nawiew (TSP 24/25)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 25 << 8));
         if (response && t_supply_out_sensor) {
-            // Składanie 16-bitowej wartości (HB i LB)
-            int16_t val = (int16_t)(response & 0xFFFF);
-            t_supply_out_sensor->publish_state((float)val / 10.0f);
+            // getUInt wycina nagłówek OpenTherm i zostawia czyste 16 bitów danych
+            float val = (float)((int16_t)ot->getUInt(response)) / 10.0f;
+            if (val > -50 && val < 100) t_supply_out_sensor->publish_state(val);
         }
         current_step++; break;
 
-      case 3: // T3 - Standard (Jeśli działa, zostawiamy)
+      case 3: // T3 - Wywiew
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 4: // T4 - Wyrzutnia (Próba TSP 27)
+      case 4: // T4 - Wyrzutnia (TSP 26/27)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 27 << 8));
         if (response && t_exhaust_out_sensor) {
-            int16_t val = (int16_t)(response & 0xFFFF);
-            t_exhaust_out_sensor->publish_state((float)val / 10.0f);
+            float val = (float)((int16_t)ot->getUInt(response)) / 10.0f;
+            if (val > -50 && val < 100) t_exhaust_out_sensor->publish_state(val);
         }
         current_step++; break;
 
-      case 5: // Przepływ (Uproszczony odczyt, skoro działał)
+      case 5: // Przepływ (TSP 53)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
-        if (response && current_flow_sensor) current_flow_sensor->publish_state(response & 0xFFFF);
+        if (response && current_flow_sensor) {
+            current_flow_sensor->publish_state(ot->getUInt(response));
+        }
         current_step++; break;
 
-      case 6: // Ciśnienie
+      case 6: // Ciśnienie (TSP 65)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
-        if (response && pressure_in_sensor) pressure_in_sensor->publish_state(response & 0xFFFF);
+        if (response && pressure_in_sensor) {
+            pressure_in_sensor->publish_state(ot->getUInt(response));
+        }
         current_step = 0; break;
     }
   }
