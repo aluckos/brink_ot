@@ -24,7 +24,6 @@ class BrinkOpenTherm : public PollingComponent {
   int pin_in, pin_out;
   int current_step = 0;
   float target_ventilation = 28.0f; 
-  uint8_t data_hb = 0;
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
   sensor::Sensor *t_supply_out_sensor{nullptr};
@@ -52,48 +51,40 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
-    // Podstawowy status
+    // Podtrzymanie komunikacji
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(20);
 
     switch(current_step) {
-      case 0:
+      case 0: // Sterowanie (ID 71)
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
 
-      case 1: // T1 (Działa)
+      case 1: // T1 (Standard ID 80)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 2: // T3 (Działa)
+      case 2: // T3 (Standard ID 82)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 3: // PRZEPŁYW HB (TSP 52)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-        if (response) data_hb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-
-      case 4: // PRZEPŁYW LB (TSP 53)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
-        if (response && current_flow_sensor) {
-            uint16_t flow = (uint16_t)(data_hb << 8) | (uint8_t)(response & 0xFF);
-            if (flow < 1000) current_flow_sensor->publish_state(flow);
+      case 3: // PRZEPŁYW (TSP 53 z Member ID 1)
+        // 0x1035 to: Member ID 1 (starszy bajt 0x10) + ID 89 (0x35)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 0x1035));
+        if (response) {
+            uint16_t val = (uint16_t)(response & 0xFFFF);
+            // Wykluczamy ramki puste (0x3500 czyli 13568)
+            if (val > 0 && val < 1000) current_flow_sensor->publish_state(val);
         }
         current_step++; break;
 
-      case 5: // CIŚNIENIE HB (TSP 64)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 64 << 8));
-        if (response) data_hb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-
-      case 6: // CIŚNIENIE LB (TSP 65)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
-        if (response && pressure_in_sensor) {
-            uint16_t press = (uint16_t)(data_hb << 8) | (uint8_t)(response & 0xFF);
-            if (press < 1000) pressure_in_sensor->publish_state(press);
+      case 4: // CIŚNIENIE (TSP 65 z Member ID 1)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 0x1041));
+        if (response) {
+            uint16_t val = (uint16_t)(response & 0xFFFF);
+            if (val > 0 && val < 1000) pressure_in_sensor->publish_state(val);
         }
         current_step = 0; break;
     }
