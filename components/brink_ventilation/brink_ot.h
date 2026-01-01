@@ -1,30 +1,31 @@
 #pragma once
 
 #include "esphome.h"
-#include "OpenTherm.h" // Zmienione z opentherm.h na OpenTherm.h
+#include "OpenTherm.h"
 
 namespace esphome {
 namespace brink_ventilation {
 
-// Definicja statycznych zmiennych dla obsługi przerwań
+// Statyczna funkcja przerwania wymagana przez bibliotekę
 static void IRAM_ATTR handleInterrupt() {
-    // Pusta funkcja
+    // Pusta implementacja
 }
 
 class BrinkOpenTherm : public PollingComponent {
  public:
   OpenTherm ot;
-  int in_pin, out_pin;
-
+  
   sensor::Sensor *current_vent_sensor{nullptr};
   sensor::Sensor *supply_temp_sensor{nullptr};
   sensor::Sensor *exhaust_temp_sensor{nullptr};
   
-  BrinkOpenTherm(int in, int out) : PollingComponent(10000), in_pin(in), out_pin(out) {}
+  // W tej bibliotece piny podajemy w konstruktorze obiektu ot(...)
+  BrinkOpenTherm(int in_pin, int out_pin) 
+      : PollingComponent(10000), ot(in_pin, out_pin) {}
 
   void setup() override {
-    // Inicjalizacja biblioteki
-    ot.begin(in_pin, out_pin, handleInterrupt);
+    // Zgodnie z błędem: candidate expects 1 argument (handleInterruptCallback)
+    ot.begin(handleInterrupt);
   }
 
   void set_current_vent_sensor(sensor::Sensor *s) { current_vent_sensor = s; }
@@ -32,28 +33,35 @@ class BrinkOpenTherm : public PollingComponent {
   void set_exhaust_temp_sensor(sensor::Sensor *s) { exhaust_temp_sensor = s; }
 
   void update() override {
+    // Używamy nazw typów zgodnych z biblioteką: OpenThermRequestType::OT_READ_DATA
+    
     // ID 77: Relative ventilation
-    unsigned long response = ot.sendRequest(ot.buildRequest(OpenThermMessageType::Read_Data, 77, 0));
-    if (ot.isValidResponse(response) && current_vent_sensor != nullptr) {
-        current_vent_sensor->publish_state(ot.getUInt(response));
+    unsigned long request77 = ot.buildRequest(OpenThermRequestType::OT_READ_DATA, 77, 0);
+    unsigned long response77 = ot.sendRequest(request77);
+    if (ot.isValidResponse(response77) && current_vent_sensor != nullptr) {
+        current_vent_sensor->publish_state(ot.getUInt(response77));
     }
 
     // ID 80: Supply inlet temp
-    response = ot.sendRequest(ot.buildRequest(OpenThermMessageType::Read_Data, 80, 0));
-    if (ot.isValidResponse(response) && supply_temp_sensor != nullptr) {
-        supply_temp_sensor->publish_state(ot.getFloat(response));
+    unsigned long request80 = ot.buildRequest(OpenThermRequestType::OT_READ_DATA, 80, 0);
+    unsigned long response80 = ot.sendRequest(request80);
+    if (ot.isValidResponse(response80) && supply_temp_sensor != nullptr) {
+        supply_temp_sensor->publish_state(ot.getFloat(response80));
     }
 
     // ID 82: Exhaust air temp
-    response = ot.sendRequest(ot.buildRequest(OpenThermMessageType::Read_Data, 82, 0));
-    if (ot.isValidResponse(response) && exhaust_temp_sensor != nullptr) {
-        exhaust_temp_sensor->publish_state(ot.getFloat(response));
+    unsigned long request82 = ot.buildRequest(OpenThermRequestType::OT_READ_DATA, 82, 0);
+    unsigned long response82 = ot.sendRequest(request82);
+    if (ot.isValidResponse(response82) && exhaust_temp_sensor != nullptr) {
+        exhaust_temp_sensor->publish_state(ot.getFloat(response82));
     }
   }
 
   void set_ventilation_level(float level) {
+    // ID 71: Write ventilation level
     unsigned int data = ot.temperatureToData(level);
-    ot.sendRequest(ot.buildRequest(OpenThermMessageType::Write_Data, 71, data));
+    unsigned long request71 = ot.buildRequest(OpenThermRequestType::OT_WRITE_DATA, 71, data);
+    ot.sendRequest(request71);
   }
 };
 
