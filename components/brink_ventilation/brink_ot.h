@@ -24,6 +24,7 @@ class BrinkOpenTherm : public PollingComponent {
   int pin_in, pin_out;
   int current_step = 0;
   float target_ventilation = 28.0f; 
+  uint8_t data_hb = 0;
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
   sensor::Sensor *t_supply_out_sensor{nullptr};
@@ -51,56 +52,48 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
-    // Podtrzymanie komunikacji (ID 0)
+    // Podstawowy status
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(20);
 
     switch(current_step) {
-      case 0: // Nastawa mocy
+      case 0:
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
 
-      case 1: // T1 - Czerpnia (Standard ID 80)
+      case 1: // T1 (Działa)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 2: // T2 - Nawiew (Próba TSP 25)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 25 << 8));
-        if (response) {
-            uint16_t u16 = response & 0xFFFF;
-            if (u16 > 0 && u16 < 4000) t_supply_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
-        }
-        current_step++; break;
-
-      case 3: // T3 - Wywiew (Standard ID 82)
+      case 2: // T3 (Działa)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 4: // T4 - Wyrzutnia (Próba TSP 29 - zmiana z 27)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 29 << 8));
-        if (response) {
-            uint16_t u16 = response & 0xFFFF;
-            if (u16 > 0 && u16 < 4000) t_exhaust_out_sensor->publish_state((float)((int16_t)u16) / 10.0f);
-        }
+      case 3: // PRZEPŁYW HB (TSP 52)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
+        if (response) data_hb = (uint8_t)(response & 0xFF);
         current_step++; break;
 
-      case 5: // PRZEPŁYW (TSP 53 - PRZYWRÓCONY)
+      case 4: // PRZEPŁYW LB (TSP 53)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
-        if (response) {
-            uint16_t u16 = response & 0xFFFF;
-            // Jeśli u16 == 13568 (0x3500), to znaczy że pusta ramka. 
-            // Prawidłowy przepływ powinien być mniejszy niż 1000.
-            if (u16 > 0 && u16 < 1000) current_flow_sensor->publish_state(u16);
+        if (response && current_flow_sensor) {
+            uint16_t flow = (uint16_t)(data_hb << 8) | (uint8_t)(response & 0xFF);
+            if (flow < 1000) current_flow_sensor->publish_state(flow);
         }
         current_step++; break;
 
-      case 6: // CIŚNIENIE (TSP 65 - PRZYWRÓCONY)
+      case 5: // CIŚNIENIE HB (TSP 64)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 64 << 8));
+        if (response) data_hb = (uint8_t)(response & 0xFF);
+        current_step++; break;
+
+      case 6: // CIŚNIENIE LB (TSP 65)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
-        if (response) {
-            uint16_t u16 = response & 0xFFFF;
-            if (u16 > 0 && u16 < 2000) pressure_in_sensor->publish_state(u16);
+        if (response && pressure_in_sensor) {
+            uint16_t press = (uint16_t)(data_hb << 8) | (uint8_t)(response & 0xFF);
+            if (press < 1000) pressure_in_sensor->publish_state(press);
         }
         current_step = 0; break;
     }
