@@ -52,9 +52,13 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
-    // Podstawowe zapytanie o status (ID 0)
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(20);
+
+    // To naprawia niedziałający text_sensor
+    if (this->status_text_sensor != nullptr) {
+      this->status_text_sensor->publish_state("Połączono");
+    }
 
     switch(current_step) {
       case 0:
@@ -76,8 +80,6 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
         if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      
-      // TWOJA SPRAWDZONA LOGIKA TSP
       case 5:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
@@ -85,8 +87,7 @@ class BrinkOpenTherm : public PollingComponent {
       case 6:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response && current_flow_sensor) {
-            // Dokładnie to co napisałeś: (Bajt z TSP 53 << 8) | (Bajt z TSP 52)
-            current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+          current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
       case 7:
@@ -96,8 +97,7 @@ class BrinkOpenTherm : public PollingComponent {
       case 8:
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
         if (response && pressure_in_sensor) {
-            // Dokładnie to co napisałeś: (Bajt z TSP 65 << 8) | (Bajt z TSP 64)
-            pressure_in_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+          pressure_in_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step = 0; break;
     }
