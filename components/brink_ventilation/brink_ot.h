@@ -55,7 +55,6 @@ class BrinkOpenTherm : public PollingComponent {
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(20);
 
-    // To naprawia niedziałający text_sensor
     if (this->status_text_sensor != nullptr) {
       this->status_text_sensor->publish_state("Połączono");
     }
@@ -64,40 +63,48 @@ class BrinkOpenTherm : public PollingComponent {
       case 0:
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
-      case 1:
+      case 1: // T1 (Standard OK)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 2:
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
-        if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
+      case 2: // T2 (Zmiana na TSP 24)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 24 << 8));
+        if (response && t_supply_out_sensor) {
+            float val = (float)(response & 0xFF) / 2.0f; // Niektóre modele dzielą przez 2, inne odejmują 100
+            if (val > 0) t_supply_out_sensor->publish_state(val);
+        }
         current_step++; break;
-      case 3:
+      case 3: // T3 (Standard OK)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 4:
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
-        if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
+      case 4: // T4 (Zmiana na TSP 25)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 25 << 8));
+        if (response && t_exhaust_out_sensor) {
+            float val = (float)(response & 0xFF) / 2.0f;
+            if (val > 0) t_exhaust_out_sensor->publish_state(val);
+        }
         current_step++; break;
-      case 5:
+      case 5: // PRZEPŁYW (Działa - nie ruszamy)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-      case 6:
+      case 6: // PRZEPŁYW (Działa - nie ruszamy)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response && current_flow_sensor) {
           current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-      case 7:
+      case 7: // CIŚNIENIE (Test innej kolejności bajtów)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 64 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-      case 8:
+      case 8: // CIŚNIENIE (Test innej kolejności bajtów)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 65 << 8));
         if (response && pressure_in_sensor) {
-          pressure_in_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+          // Próbujemy Big Endian dla odmiany, jeśli Little Endian dawał 0
+          uint16_t val = (temp_lb << 8) | (uint8_t)(response & 0xFF);
+          pressure_in_sensor->publish_state(val);
         }
         current_step = 0; break;
     }
