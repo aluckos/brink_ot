@@ -7,7 +7,6 @@ from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 brink_ventilation_ns = cg.esphome_ns.namespace("brink_ventilation")
 BrinkNumber = brink_ventilation_ns.class_("BrinkNumber", number.Number)
 
-# Używamy pełnego schematu numeru, aby uniknąć KeyError
 CONFIG_SCHEMA = number.number_schema(BrinkNumber).extend({
     cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm),
 }).extend(cv.COMPONENT_SCHEMA)
