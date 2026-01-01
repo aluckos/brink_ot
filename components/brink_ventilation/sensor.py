@@ -6,7 +6,8 @@ from esphome.const import (
     ICON_THERMOMETER, 
     UNIT_PERCENT, 
     ICON_FAN,
-    DEVICE_CLASS_TEMPERATURE
+    DEVICE_CLASS_TEMPERATURE,
+    STATE_CLASS_MEASUREMENT
 )
 from . import brink_ns, BrinkOpenTherm, CONF_BRINK_VENTILATION_ID
 
@@ -17,17 +18,20 @@ CONFIG_SCHEMA = cv.Schema({
         icon=ICON_THERMOMETER,
         accuracy_decimals=1,
         device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
     ),
     cv.Optional("exhaust_temp"): sensor.sensor_schema(
         unit_of_measurement=UNIT_CELSIUS,
         icon=ICON_THERMOMETER,
         accuracy_decimals=1,
         device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
     ),
     cv.Optional("current_vent"): sensor.sensor_schema(
         unit_of_measurement=UNIT_PERCENT,
         icon=ICON_FAN,
         accuracy_decimals=0,
+        state_class=STATE_CLASS_MEASUREMENT,
     ),
 })
 
