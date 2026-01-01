@@ -4,7 +4,6 @@ from esphome.components import number
 from esphome.const import CONF_ID, CONF_NAME, CONF_ICON
 from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 
-# Definiujemy klasę BrinkNumber w namespace
 brink_ventilation_ns = cg.esphome_ns.namespace("brink_ventilation")
 BrinkNumber = brink_ventilation_ns.class_("BrinkNumber", number.Number)
 
@@ -17,8 +16,8 @@ CONFIG_SCHEMA = cv.Schema({
 
 async def to_code(config):
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
-    var = cg.new_variable(config[CONF_ID])
-    # Rejestrujemy numer z domyślnymi wartościami dla Brinka (0-100%)
+    # Zmiana na new_Pvariable
+    var = cg.new_Pvariable(config[CONF_ID])
     await number.register_number(var, config, min_value=0, max_value=100, step=1)
     cg.add(var.set_parent(parent))
     cg.add(parent.set_ventilation_number(var))
