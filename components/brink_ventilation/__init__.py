@@ -18,5 +18,5 @@ CONFIG_SCHEMA = cv.Schema({
 def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID], config['in_pin'], config['out_pin'])
     yield cg.register_component(var, config)
-    # Dodanie biblioteki OpenTherm
-    cg.add_library("ihormaze/OpenTherm Library", "1.1.5")
+    # Zmieniono sposób dodawania biblioteki na bezpośredni link do GitHuba
+    cg.add_library("https://github.com/ihormaze/OpenTherm", None)
