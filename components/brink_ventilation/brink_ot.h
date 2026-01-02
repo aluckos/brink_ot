@@ -67,26 +67,21 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 2: // T2 (Nawiew) - Próba TSP 20
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 20 << 8));
+      case 2: // Sprawdzenie statusu Bypassu (często TSP 11)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 11 << 8));
         if (response && t_supply_out_sensor) {
-          // W Brinku temperatury w TSP są zazwyczaj surowym bajtem
-          float t = (float)(response & 0xFF);
-          // Jeśli wartość jest w okolicach 100+, odejmujemy 100
-          if (t > 70) t -= 100.0f;
-          if (t > -30 && t < 100) t_supply_out_sensor->publish_state(t);
+          // Zamiast temperatury T2, wyświetlamy status bypassu (0-otwarty, 1-zamknięty itp.)
+          t_supply_out_sensor->publish_state((float)(response & 0xFF));
         }
         current_step++; break;
       case 3: // T3 - Działa na ID 82
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 4: // T4 (Wyrzutnia) - Próba TSP 21
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 21 << 8));
+      case 4: // Sprawdzenie wilgotności (jeśli masz czujnik - ID 78)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)78, 0));
         if (response && t_exhaust_out_sensor) {
-          float t = (float)(response & 0xFF);
-          if (t > 70) t -= 100.0f;
-          if (t > -30 && t < 100) t_exhaust_out_sensor->publish_state(t);
+          t_exhaust_out_sensor->publish_state((float)(response & 0xFF));
         }
         current_step++; break;
       case 5: // PRZEPŁYW LB (TSP 52)
