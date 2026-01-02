@@ -14,7 +14,7 @@ TYPES = {
     "T_EXHAUST_IN": ["Brink Temp Wywiew", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
     "T_EXHAUST_OUT": ["Brink Temp Wyrzutnia", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
     "CURRENT_FLOW": ["Brink Przepływ", "m³/h", 0, None],
-    "PRESSURE_IN": ["Brink Ciśnienie", "Pa", 0, None],
+    "PRESSURE_IN": ["Brink Obroty", "rpm", 0, None],
 }
 
 CONFIG_SCHEMA = sensor.sensor_schema(
