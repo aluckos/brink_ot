@@ -67,23 +67,28 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 2: // T2 (Nawiew) - TSP 16 (Supply Temperature)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 16 << 8));
+      case 2: // T2 (Nawiew) - TSP 45 (Zazwyczaj Supply Temp we Flair)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 45 << 8));
         if (response && t_supply_out_sensor) {
-          // Wartość surowa minus 100 (np. 121 - 100 = 21.0C)
+          // Jeśli wartość jest przesunięta o 100
           float t = (float)(response & 0xFF) - 100.0f;
-          if (t > -30 && t < 70) t_supply_out_sensor->publish_state(t);
+          // Jeśli wynik jest absurdalny (np. -100), spróbuj bez odejmowania 100
+          if (t < -50) t = (float)(response & 0xFF); 
+          
+          if (t > -30 && t < 100) t_supply_out_sensor->publish_state(t);
         }
         current_step++; break;
       case 3: // T3 - Działa na ID 82
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 4: // T4 (Wyrzutnia) - TSP 17 (Exhaust Temperature)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 17 << 8));
+      case 4: // T4 (Wyrzutnia) - TSP 47 (Zazwyczaj Exhaust Temp we Flair)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 47 << 8));
         if (response && t_exhaust_out_sensor) {
           float t = (float)(response & 0xFF) - 100.0f;
-          if (t > -30 && t < 70) t_exhaust_out_sensor->publish_state(t);
+          if (t < -50) t = (float)(response & 0xFF);
+
+          if (t > -30 && t < 100) t_exhaust_out_sensor->publish_state(t);
         }
         current_step++; break;
       case 5: // PRZEPŁYW LB (TSP 52)
