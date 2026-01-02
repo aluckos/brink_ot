@@ -24,7 +24,6 @@ class BrinkOpenTherm : public PollingComponent {
   int pin_in, pin_out;
   int current_step = 0;
   float target_ventilation = 25.0f;
-  uint8_t temp_lb = 0;
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
   sensor::Sensor *t_supply_out_sensor{nullptr};
@@ -52,59 +51,38 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
+    // Podtrzymanie komunikacji
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
     delay(20);
 
-    if (this->status_text_sensor != nullptr) {
-      this->status_text_sensor->publish_state("Połączono");
-    }
-
     switch(current_step) {
-      case 0:
+      case 0: // Nastawa (ID 71)
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
-      case 1: // T1 - Działa na ID 80
+
+      case 1: // T1 (ID 80)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 2: // Sprawdzenie statusu Bypassu (często TSP 11)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 11 << 8));
-        if (response && t_supply_out_sensor) {
-          // Zamiast temperatury T2, wyświetlamy status bypassu (0-otwarty, 1-zamknięty itp.)
-          t_supply_out_sensor->publish_state((float)(response & 0xFF));
-        }
+
+      case 2: // RPM Nawiew (ID 85 z Twojej listy) - mapujemy na T2 dla testu
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)85, 0));
+        if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state((float)ot->getUInt(response));
         current_step++; break;
-      case 3: // T3 - Działa na ID 82
+
+      case 3: // T3 (ID 82)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 4: // Sprawdzenie wilgotności (jeśli masz czujnik - ID 78)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)78, 0));
-        if (response && t_exhaust_out_sensor) {
-          t_exhaust_out_sensor->publish_state((float)(response & 0xFF));
-        }
-        current_step++; break;
-      case 5: // PRZEPŁYW LB (TSP 52)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-        if (response) temp_lb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-      case 6: // PRZEPŁYW HB (TSP 53)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
-        if (response && current_flow_sensor) {
-          current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
-        }
-        current_step++; break;
-      case 7: // RPM (Zostawiamy, bo działa - 306 RPM)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 49 << 8));
-        if (response) temp_lb = (uint8_t)(response & 0xFF);
+
+      case 4: // RPM Wywiew (ID 84 z Twojej listy) - mapujemy na T4 dla testu
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)84, 0));
+        if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state((float)ot->getUInt(response));
         current_step++; break;
 
-      case 8: // RPM HB + LB
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 50 << 8));
-        if (response && pressure_in_sensor) {
-          uint16_t rpm = (temp_lb << 8) | (uint8_t)(response & 0xFF);
-          pressure_in_sensor->publish_state((float)rpm);
-        }
+      case 5: // Odczyt przepływu m3/h (ID 77 z Twojej listy)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)77, 0));
+        if (response && current_flow_sensor) current_flow_sensor->publish_state((float)(response & 0xFF));
         current_step = 0; break;
     }
   }
