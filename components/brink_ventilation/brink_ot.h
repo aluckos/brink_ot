@@ -67,23 +67,23 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 2: // T2 (Nawiew) - Próba TSP 44
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 44 << 8));
+      case 2: // T2 (Nawiew) - TSP 16 (Supply Temperature)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 16 << 8));
         if (response && t_supply_out_sensor) {
-          // Format f8.8 często występuje w TSP jeśli dane są bezpośrednio z czujników
-          float t = (float)((int16_t)(response & 0xFFFF)) / 256.0f;
-          if (t > -20 && t < 60) t_supply_out_sensor->publish_state(t);
+          // Wartość surowa minus 100 (np. 121 - 100 = 21.0C)
+          float t = (float)(response & 0xFF) - 100.0f;
+          if (t > -30 && t < 70) t_supply_out_sensor->publish_state(t);
         }
         current_step++; break;
       case 3: // T3 - Działa na ID 82
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 4: // T4 (Wyrzutnia) - Próba TSP 46
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 46 << 8));
+      case 4: // T4 (Wyrzutnia) - TSP 17 (Exhaust Temperature)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 17 << 8));
         if (response && t_exhaust_out_sensor) {
-          float t = (float)((int16_t)(response & 0xFFFF)) / 256.0f;
-          if (t > -20 && t < 60) t_exhaust_out_sensor->publish_state(t);
+          float t = (float)(response & 0xFF) - 100.0f;
+          if (t > -30 && t < 70) t_exhaust_out_sensor->publish_state(t);
         }
         current_step++; break;
       case 5: // PRZEPŁYW LB (TSP 52)
@@ -96,12 +96,12 @@ class BrinkOpenTherm : public PollingComponent {
           current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-      case 7: // RPM LB (TSP 49) - Zostawiamy, bo działa (306 RPM)
+      case 7: // RPM (Zostawiamy, bo działa - 306 RPM)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 49 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
 
-      case 8: // RPM HB (TSP 50) + Składanie
+      case 8: // RPM HB + LB
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 50 << 8));
         if (response && pressure_in_sensor) {
           uint16_t rpm = (temp_lb << 8) | (uint8_t)(response & 0xFF);
