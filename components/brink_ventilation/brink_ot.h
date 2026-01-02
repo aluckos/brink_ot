@@ -64,27 +64,28 @@ class BrinkOpenTherm : public PollingComponent {
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-
       case 2: // RPM Nawiew (ID 85 z Twojej listy) - mapujemy na T2 dla testu
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)85, 0));
         if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state((float)ot->getUInt(response));
         current_step++; break;
-
       case 3: // T3 (ID 82)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-
       case 4: // RPM Wywiew (ID 84 z Twojej listy) - mapujemy na T4 dla testu
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)84, 0));
         if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state((float)ot->getUInt(response));
         current_step++; break;
-
-      case 5: // Odczyt przepływu m3/h (ID 77 z Twojej listy)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)77, 0));
-        if (response && current_flow_sensor) current_flow_sensor->publish_state((float)(response & 0xFF));
-        current_step = 0; break;
-    }
+      case 5: // PRZEPŁYW LB (TSP 52)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
+        if (response) temp_lb = (uint8_t)(response & 0xFF);
+        current_step++; break;
+      case 6: // PRZEPŁYW HB (TSP 53)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
+        if (response && current_flow_sensor) {
+          current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+        }
+        current_step++; break;    }
   }
 };
 
