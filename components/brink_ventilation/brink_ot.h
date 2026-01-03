@@ -51,38 +51,40 @@ class BrinkOpenTherm : public PollingComponent {
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
 
     switch(current_step) {
-      case 0: // Set Ventilation (ID 71)
+      case 0: // Nastawa mocy (To działa)
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
 
-      case 1: // T1 - Czerpnia (Standard ID 80)
+      case 1: // T1 - Czerpnia (To działa)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
 
-      case 2: // T3 - Wywiew (Standard ID 82)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
-        if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
+      case 2: // T3 - Wywiew (Używamy TSP 57 zamiast ID 82)
+        // W Renovent HR TempIndoors to TSP 57
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 57 << 8));
+        if (response && t_exhaust_in_sensor) {
+          // Temperatura w TSP jest przesunięta o 100 (np. 120 = 20 stopni)
+          float temp = (float)(response & 0xFF) - 100.0f;
+          t_exhaust_in_sensor->publish_state(temp);
+        }
         current_step++; break;
 
-      case 3: // Przepływ (TSP 52) - Renovent HR czyta to bezpośrednio z TSP
+      case 3: // Przepływ (TSP 52)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
         if (response && current_flow_sensor) {
-          // W Renovent HR wartość przepływu jest często bezpośrednio w bajcie danych (U8)
           current_flow_sensor->publish_state((float)(response & 0xFF));
         }
         current_step++; break;
 
-      case 4: // Status Filtra (TSP 13 - I13 w Twoim kodzie)
-        // Zapytanie o TSP index 13
+      case 4: // Status Filtra (TSP 13)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
-        if (response && filter_status_binary) {
-          // Jeśli wartość TSP 13 == 1, filtr jest brudny/wymaga serwisu
-          bool filter_dirty = (response & 0xFF) == 1;
-          filter_status_binary->publish_state(filter_dirty);
-          
-          if (filter_dirty) {
-             ESP_LOGW("custom", "Brink: Wykryto zabrudzenie filtra (TSP 13)");
+        if (filter_status_binary) {
+          if (response) {
+            bool filter_dirty = (response & 0xFF) == 1;
+            filter_status_binary->publish_state(filter_dirty);
+          } else {
+            // Jeśli brak odpowiedzi, nie zmieniamy stanu, by uniknąć migotania
           }
         }
         current_step = 0; break;
