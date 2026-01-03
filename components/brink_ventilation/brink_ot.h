@@ -95,7 +95,7 @@ class BrinkOpenTherm : public PollingComponent {
           current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-      case 8: // Status filtra (ID 70)
+      case 7: // Status filtra (ID 70)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)70, 0));
         if (response && filter_status_binary) {
           // Bit 1 w LB (Lower Byte) to Filter Service Indication
