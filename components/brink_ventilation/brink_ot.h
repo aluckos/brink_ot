@@ -82,14 +82,22 @@ class BrinkOpenTherm : public PollingComponent {
         }
         current_step++; break;
 
-      case 5: // Ostatnia próba filtra (ID 70) z logowaniem błędu
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)70, 0));
+      case 5: // Odczyt statusu filtra z TSP 13 (I13)
+        // Wysyłamy prośbę o ID 89 z indeksem 13 (0x0D) przesuniętym na starszy bajt
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
+        
         if (filter_status_binary) {
           if (response) {
-            // Próbujemy maski 0x02 (bit 1 w dolnym bajcie) - najczęstszy standard
-            filter_status_binary->publish_state(response & 0x02);
+            // Według Twojego kodu Arduino: I13 (Filter message) 1 = On
+            // Wartość znajduje się w młodszym bajcie odpowiedzi (Data Value)
+            bool filter_dirty = (response & 0xFF) == 1;
+            filter_status_binary->publish_state(filter_dirty);
+            
+            // Logowanie pomocnicze, aby potwierdzić odczyt w konsoli
+            ESP_LOGD("custom", "Odpowiedź TSP 13 (Filtr): %08lX -> Stan: %s", response, filter_dirty ? "BRUDNY" : "CZYSTY");
           } else {
-            // Jeśli brak odpowiedzi, sensor pozostaje w stanie 'unknown' lub 'off'
+            // Brak odpowiedzi z rekuperatora dla tego TSP
+            ESP_LOGW("custom", "Brak odpowiedzi dla TSP 13");
           }
         }
         current_step = 0; break;
