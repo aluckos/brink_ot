@@ -27,23 +27,17 @@ class BrinkOpenTherm : public PollingComponent {
   uint8_t temp_lb = 0;
 
   sensor::Sensor *t_supply_in_sensor{nullptr};
-  sensor::Sensor *t_supply_out_sensor{nullptr};
   sensor::Sensor *t_exhaust_in_sensor{nullptr};
-  sensor::Sensor *t_exhaust_out_sensor{nullptr};
   sensor::Sensor *current_flow_sensor{nullptr};
-  sensor::Sensor *pressure_in_sensor{nullptr}; // Tu będziemy wysyłać RPM dla testu
-  text_sensor::TextSensor *status_text_sensor{nullptr};
   binary_sensor::BinarySensor *filter_status_binary{nullptr};
+  text_sensor::TextSensor *status_text_sensor{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
   void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
-  void set_t_supply_out_sensor(sensor::Sensor *s) { t_supply_out_sensor = s; }
   void set_t_exhaust_in_sensor(sensor::Sensor *s) { t_exhaust_in_sensor = s; }
-  void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; }
   void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
-  void set_pressure_in_sensor(sensor::Sensor *s) { pressure_in_sensor = s; }
-  void set_status_text_sensor(text_sensor::TextSensor *s) { status_text_sensor = s; }
   void set_filter_status_binary(binary_sensor::BinarySensor *s) { filter_status_binary = s; }
+  void set_status_text_sensor(text_sensor::TextSensor *s) { status_text_sensor = s; }
   void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
 
   void setup() override {
@@ -54,53 +48,49 @@ class BrinkOpenTherm : public PollingComponent {
 
   void update() override {
     unsigned long response = 0;
+    // Standardowy Master Status (ID 0) - niezbędny do podtrzymania sesji
     ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
-    delay(20);
 
     if (this->status_text_sensor != nullptr) {
       this->status_text_sensor->publish_state("Połączono");
     }
 
     switch(current_step) {
-      case 0:
+      case 0: // Ustawienie mocy (ID 71)
         ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
         current_step++; break;
-      case 1:
+
+      case 1: // T1 Czerpnia (ID 80)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
         if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 2: // T2 - Test TSP 45 (często T_supply_out we Flair)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 45 << 8));
-        if (response && t_supply_out_sensor) {
-          t_supply_out_sensor->publish_state((float)(response & 0xFF));
-        }
-        current_step++; break;
-      case 3:
+
+      case 2: // T3 Wywiew (ID 82)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
         if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
         current_step++; break;
-      case 4: // T4 - Test TSP 46 (często T_exhaust_out we Flair)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 46 << 8));
-        if (response && t_exhaust_out_sensor) {
-          t_exhaust_out_sensor->publish_state((float)(response & 0xFF));
-        }
-        current_step++; break;
-      case 5:
+
+      case 3: // Przepływ m3/h (TSP 52)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
         if (response) temp_lb = (uint8_t)(response & 0xFF);
         current_step++; break;
-      case 6:
+
+      case 4: // Przepływ m3/h (TSP 53)
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
         if (response && current_flow_sensor) {
           current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
         }
         current_step++; break;
-      case 7: // Status filtra (ID 70)
+
+      case 5: // Ostatnia próba filtra (ID 70) z logowaniem błędu
         response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)70, 0));
-        if (response && filter_status_binary) {
-          // Bit 1 w LB (Lower Byte) to Filter Service Indication
-          bool filter_dirty = (response & 0x0200); 
-          filter_status_binary->publish_state(filter_dirty);
+        if (filter_status_binary) {
+          if (response) {
+            // Próbujemy maski 0x02 (bit 1 w dolnym bajcie) - najczęstszy standard
+            filter_status_binary->publish_state(response & 0x02);
+          } else {
+            // Jeśli brak odpowiedzi, sensor pozostaje w stanie 'unknown' lub 'off'
+          }
         }
         current_step = 0; break;
     }
