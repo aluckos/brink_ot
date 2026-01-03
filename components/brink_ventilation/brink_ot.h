@@ -105,21 +105,25 @@ inline void BrinkOpenTherm::update() {
       if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
       current_step++; break;
 
-    case 2: // T2 Nawiew (ID 81) - DEBUG
+    case 2: // T2 Nawiew
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
       log_debug("T2_NAWIEW", response);
-      if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
+      // Publikuj tylko jeśli odpowiedź jest SUCCESS (typ 4)
+      if (ot->isValidResponse(response) && t_supply_out_sensor) {
+          t_supply_out_sensor->publish_state(ot->getFloat(response));
+      } 
       current_step++; break;
-
     case 3: // T3 Wywiew (ID 82)
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
       if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
       current_step++; break;
 
-    case 4: // T4 Wyrzutnia (ID 83) - DEBUG
+    case 4: // T4 Wyrzutnia
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
       log_debug("T4_WYRZUTNIA", response);
-      if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
+      if (ot->isValidResponse(response) && t_exhaust_out_sensor) {
+          t_exhaust_out_sensor->publish_state(ot->getFloat(response));
+      }
       current_step++; break;
 
     case 5: // Przepływ Low Byte (TSP 52)
