@@ -23,10 +23,10 @@ class BrinkOpenTherm : public PollingComponent {
   float target_ventilation = 25.0f;
   uint8_t temp_lb = 0;
 
-  sensor::Sensor *t_supply_in_sensor{nullptr};   
-  sensor::Sensor *t_supply_out_sensor{nullptr};  
-  sensor::Sensor *t_exhaust_in_sensor{nullptr};  
-  sensor::Sensor *t_exhaust_out_sensor{nullptr}; 
+  sensor::Sensor *t_supply_in_sensor{nullptr};   // T1
+  sensor::Sensor *t_supply_out_sensor{nullptr};  // T2
+  sensor::Sensor *t_exhaust_in_sensor{nullptr};  // T3
+  sensor::Sensor *t_exhaust_out_sensor{nullptr}; // T4
   sensor::Sensor *current_flow_sensor{nullptr};
   binary_sensor::BinarySensor *filter_status_binary{nullptr};
   text_sensor::TextSensor *status_text_sensor{nullptr};
@@ -45,27 +45,19 @@ class BrinkOpenTherm : public PollingComponent {
   void update() override;
 
  private:
-  // Pomocnicza metoda do czytania temperatur (używa typu READ zamiast READ_DATA)
-  float readTemperature(OpenThermMessageID id) {
-    // W standardowej bibliotece READ to często 0, a READ_DATA to 0. 
-    // Brink wymaga typu wiadomości 0 dla odczytu temperatur.
-    unsigned long request = ot->buildRequest(OpenThermMessageType::READ_DATA, id, 0);
-    unsigned long response = ot->sendRequest(request);
-    if (ot->isValidResponse(response)) {
-      return ot->getFloat(response);
-    }
-    return -1.0f;
-  }
+  // Ręczne budowanie ramki zgodnie z logiką Brink (typ 0 = READ)
+  unsigned long requestValue(byte id, unsigned int data = 0) {
+    unsigned long request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)id, data);
+    // Wymuszamy typ wiadomości 0 (READ) zamiast 1 (READ_DATA) jeśli biblioteka go zmienia
+    request &= ~(7ul << 28); 
+    
+    // Przeliczenie parzystości po zmianie typu
+    bool p = false;
+    unsigned long temp = request & 0x7FFFFFFF;
+    while (temp > 0) { if (temp & 1) p = !p; temp >>= 1; }
+    if (p) request |= (1ul << 31); else request &= ~(1ul << 31);
 
-  // Pomocnicza metoda do czytania parametrów TSP (ID 89)
-  float readTSP(uint8_t index) {
-    unsigned int data = index << 8;
-    unsigned long request = ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, data);
-    unsigned long response = ot->sendRequest(request);
-    if (ot->isValidResponse(response)) {
-      return (float)(response & 0xFF);
-    }
-    return -1.0f;
+    return ot->sendRequest(request);
   }
 };
 
@@ -92,60 +84,65 @@ inline void BrinkNumber::control(float value) {
 inline void BrinkOpenTherm::update() {
   if (ot == nullptr) return;
 
-  // Podtrzymanie statusu (ID 0)
+  // Cykl życia OpenTherm: Zawsze zaczynamy od Statusu
+  // 0x0100 informuje rekuperator, że Master jest gotowy do pracy
   ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
 
-  if (this->status_text_sensor != nullptr) {
-    this->status_text_sensor->publish_state("Połączono");
-  }
+  unsigned long response = 0;
+  float temp_val = 0;
 
-  float val;
   switch(current_step) {
     case 0: // Nastawa mocy (ID 71)
       ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
       current_step++; break;
 
-    case 1: // T1 Czerpnia (ID 80)
-      val = readTemperature((OpenThermMessageID)80);
-      if (val != -1.0f && t_supply_in_sensor) t_supply_in_sensor->publish_state(val);
+    case 1: // T1 Czerpnia
+      response = requestValue(80);
+      if (ot->isValidResponse(response) && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
       current_step++; break;
 
-    case 2: // T2 Nawiew (ID 81)
-      val = readTemperature((OpenThermMessageID)81);
-      if (val != -1.0f && t_supply_out_sensor) t_supply_out_sensor->publish_state(val);
+    case 2: // T2 Nawiew
+      response = requestValue(81);
+      if (ot->isValidResponse(response) && t_supply_out_sensor) {
+          temp_val = ot->getFloat(response);
+          if (temp_val < 100.0f && temp_val > -30.0f) t_supply_out_sensor->publish_state(temp_val);
+      }
       current_step++; break;
 
-    case 3: // T3 Wywiew (ID 82)
-      val = readTemperature((OpenThermMessageID)82);
-      if (val != -1.0f && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(val);
+    case 3: // T3 Wywiew
+      response = requestValue(82);
+      if (ot->isValidResponse(response) && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
       current_step++; break;
 
-    case 4: // T4 Wyrzutnia (ID 83)
-      val = readTemperature((OpenThermMessageID)83);
-      if (val != -1.0f && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(val);
+    case 4: // T4 Wyrzutnia
+      response = requestValue(83);
+      if (ot->isValidResponse(response) && t_exhaust_out_sensor) {
+          temp_val = ot->getFloat(response);
+          if (temp_val < 100.0f && temp_val > -30.0f) t_exhaust_out_sensor->publish_state(temp_val);
+      }
       current_step++; break;
 
     case 5: // Przepływ Low Byte (TSP 52)
-      val = readTSP(52);
-      if (val != -1.0f) temp_lb = (uint8_t)val;
+      response = requestValue(89, 52 << 8);
+      if (ot->isValidResponse(response)) temp_lb = (uint8_t)(response & 0xFF);
       current_step++; break;
 
     case 6: // Przepływ High Byte (TSP 53)
-      val = readTSP(53);
-      if (val != -1.0f && current_flow_sensor) {
-        current_flow_sensor->publish_state(((uint16_t)((uint8_t)val) << 8) | temp_lb);
+      response = requestValue(89, 53 << 8);
+      if (ot->isValidResponse(response) && current_flow_sensor) {
+        current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
       }
       current_step++; break;
 
     case 7: // Status Filtra (TSP 13)
-      val = readTSP(13);
-      if (val != -1.0f && filter_status_binary) {
-        filter_status_binary->publish_state(((uint8_t)val) == 1);
+      response = requestValue(89, 13 << 8);
+      if (ot->isValidResponse(response) && filter_status_binary) {
+        filter_status_binary->publish_state((response & 0xFF) == 1);
       }
       current_step = 0; break;
       
     default:
-      current_step = 0; break;
+      current_step = 0;
   }
 }
 
