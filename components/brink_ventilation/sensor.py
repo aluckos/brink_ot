@@ -7,14 +7,11 @@ from esphome.const import (
 )
 from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 
-# Definicje danych dla poszczególnych sensorów
+# Zostawiamy tylko to, co faktycznie działa
 TYPES = {
     "T_SUPPLY_IN": ["Brink Temp Czerpnia", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
-    "T_SUPPLY_OUT": ["Brink Temp Nawiew", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
     "T_EXHAUST_IN": ["Brink Temp Wywiew", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
-    "T_EXHAUST_OUT": ["Brink Temp Wyrzutnia", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
     "CURRENT_FLOW": ["Brink Przepływ", "m³/h", 0, None],
-    "PRESSURE_IN": ["Brink Obroty", "rpm", 0, None],
 }
 
 CONFIG_SCHEMA = sensor.sensor_schema(
@@ -28,15 +25,15 @@ async def to_code(config):
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
     conf_data = TYPES[config[CONF_TYPE]]
     
-    # Tworzymy obiekt sensora - ESPHome samo wstawi poprawne STATE_CLASS_MEASUREMENT do C++
+    # Tworzymy obiekt sensora
     var = await sensor.new_sensor(config)
     
-    # Ustawiamy pozostałe parametry z naszej mapy TYPES
+    # Ustawiamy parametry
     cg.add(var.set_unit_of_measurement(conf_data[1]))
     cg.add(var.set_accuracy_decimals(conf_data[2]))
     if conf_data[3] is not None:
         cg.add(var.set_device_class(conf_data[3]))
     
-    # Łączymy sensor z odpowiednią metodą w pliku brink_ot.h
+    # Łączymy z metodą w brink_ot.h (np. set_t_supply_in_sensor)
     func = getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")
     cg.add(func(var))
