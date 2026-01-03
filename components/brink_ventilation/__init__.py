@@ -2,6 +2,10 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
 
+# To wymusza na ESPHome załadowanie plików sensor.py i binary_sensor.py 
+# wewnątrz Twojego komponentu.
+from esphome.components import sensor, binary_sensor 
+
 brink_ventilation_ns = cg.esphome_ns.namespace("brink_ventilation")
 BrinkOpenTherm = brink_ventilation_ns.class_("BrinkOpenTherm", cg.PollingComponent)
 
