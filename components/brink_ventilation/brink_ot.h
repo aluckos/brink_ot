@@ -33,6 +33,7 @@ class BrinkOpenTherm : public PollingComponent {
   sensor::Sensor *current_flow_sensor{nullptr};
   sensor::Sensor *pressure_in_sensor{nullptr}; // Tu będziemy wysyłać RPM dla testu
   text_sensor::TextSensor *status_text_sensor{nullptr};
+  binary_sensor::BinarySensor *filter_status_binary{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
   void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
@@ -42,6 +43,7 @@ class BrinkOpenTherm : public PollingComponent {
   void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
   void set_pressure_in_sensor(sensor::Sensor *s) { pressure_in_sensor = s; }
   void set_status_text_sensor(text_sensor::TextSensor *s) { status_text_sensor = s; }
+  void set_filter_status_binary(binary_sensor::BinarySensor *s) { filter_status_binary = s; }
   void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
 
   void setup() override {
@@ -98,6 +100,14 @@ class BrinkOpenTherm : public PollingComponent {
         if (response && pressure_in_sensor) {
           // Używamy sensora ciśnienia jako wyświetlacza RPM dla testu
           pressure_in_sensor->publish_state((float)ot->getUInt(response));
+        }
+        current_step++; break;
+      case 8: // Status filtra (ID 70)
+        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)70, 0));
+        if (response && filter_status_binary) {
+          // Bit 1 w LB (Lower Byte) to Filter Service Indication
+          bool filter_dirty = (response & 0x0200); 
+          filter_status_binary->publish_state(filter_dirty);
         }
         current_step = 0; break;
     }
