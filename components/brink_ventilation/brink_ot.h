@@ -29,10 +29,10 @@ class BrinkOpenTherm : public PollingComponent {
   uint8_t temp_lb = 0;
 
   // Definicje sensorów
-  sensor::Sensor *t_supply_in_sensor{nullptr};   // T1 (Czerpnia) - ID 80
-  sensor::Sensor *t_supply_out_sensor{nullptr};  // T2 (Nawiew do domu) - ID 81 [NOWY]
-  sensor::Sensor *t_exhaust_in_sensor{nullptr};  // T3 (Wywiew z domu) - ID 82
-  sensor::Sensor *t_exhaust_out_sensor{nullptr}; // T4 (Wyrzutnia) - ID 83 [NOWY]
+  sensor::Sensor *t_supply_in_sensor{nullptr};   // T1
+  sensor::Sensor *t_supply_out_sensor{nullptr};  // T2
+  sensor::Sensor *t_exhaust_in_sensor{nullptr};  // T3
+  sensor::Sensor *t_exhaust_out_sensor{nullptr}; // T4
   
   sensor::Sensor *current_flow_sensor{nullptr};
   binary_sensor::BinarySensor *filter_status_binary{nullptr};
@@ -40,11 +40,10 @@ class BrinkOpenTherm : public PollingComponent {
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
   
-  // Settery dla sensorów
   void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
-  void set_t_supply_out_sensor(sensor::Sensor *s) { t_supply_out_sensor = s; } // [NOWY]
+  void set_t_supply_out_sensor(sensor::Sensor *s) { t_supply_out_sensor = s; }
   void set_t_exhaust_in_sensor(sensor::Sensor *s) { t_exhaust_in_sensor = s; }
-  void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; } // [NOWY]
+  void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; }
   
   void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
   void set_filter_status_binary(binary_sensor::BinarySensor *s) { filter_status_binary = s; }
@@ -55,12 +54,10 @@ class BrinkOpenTherm : public PollingComponent {
   void update() override;
 };
 
-// --- IMPLEMENTACJA FUNKCJI (poza klasami, aby uniknąć błędów scope) ---
+// --- IMPLEMENTACJA FUNKCJI ---
 
-// Globalna instancja dla przerwań
 static BrinkOpenTherm *global_brink_ot = nullptr;
 
-// Funkcja obsługi przerwań (musi być IRAM_ATTR dla ESP8266)
 static void IRAM_ATTR handleInterrupt() {
   if (global_brink_ot != nullptr && global_brink_ot->ot != nullptr) {
     global_brink_ot->ot->handleInterrupt();
@@ -83,56 +80,60 @@ inline void BrinkNumber::control(float value) {
 inline void BrinkOpenTherm::update() {
   if (ot == nullptr) return;
 
-  unsigned long response = 0;
-  // ID 0: Master Status (podtrzymanie komunikacji)
-  ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
+  // Sprawdzamy, czy biblioteka jest gotowa na kolejny krok (uwzględnia 100ms idle time)
+  if (!ot->isReady()) return;
+
+  float response_val = 0;
+
+  // Master Status - podtrzymanie komunikacji
+  ot->setBoilerStatus(false, false, false, false, false);
 
   if (this->status_text_sensor != nullptr) {
     this->status_text_sensor->publish_state("Połączono");
   }
 
-  // Rozszerzona maszyna stanów (0-7)
   switch(current_step) {
-    case 0: // Nastawa mocy (ID 71)
-      ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
+    case 0: // Nastawa mocy (Używamy dedykowanej funkcji setVentilation)
+      ot->setVentilation((unsigned int)target_ventilation);
       current_step++; break;
 
-    case 1: // T1 Czerpnia (ID 80)
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
-      if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
+    case 1: // T1 Czerpnia
+      response_val = ot->getVentSupplyInTemperature();
+      if (response_val != -1.0f && t_supply_in_sensor) t_supply_in_sensor->publish_state(response_val);
       current_step++; break;
 
-    case 2: // T2 Nawiew do domu (ID 81) [NOWY]
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
-      if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
+    case 2: // T2 Nawiew do domu
+      response_val = ot->getVentSupplyOutTemperature();
+      if (response_val != -1.0f && t_supply_out_sensor) t_supply_out_sensor->publish_state(response_val);
       current_step++; break;
 
-    case 3: // T3 Wywiew z domu (ID 82)
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
-      if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
+    case 3: // T3 Wywiew z domu
+      response_val = ot->getVentExhaustInTemperature();
+      if (response_val != -1.0f && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(response_val);
       current_step++; break;
 
-    case 4: // T4 Wyrzutnia na zewnątrz (ID 83) [NOWY]
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
-      if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
+    case 4: // T4 Wyrzutnia na zewnątrz
+      response_val = ot->getVentExhaustOutTemperature();
+      if (response_val != -1.0f && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(response_val);
       current_step++; break;
 
     case 5: // Przepływ m3/h (TSP 52 - Low Byte)
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-      if (response) temp_lb = (uint8_t)(response & 0xFF);
+      // Używamy getBrinkTSP, która wewnętrznie obsługuje ID 89 i READ
+      response_val = ot->getBrinkTSP((BrinkTSPindex)52);
+      if (response_val != -1.0f) temp_lb = (uint8_t)response_val;
       current_step++; break;
 
     case 6: // Przepływ m3/h (TSP 53 - High Byte)
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
-      if (response && current_flow_sensor) {
-        current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+      response_val = ot->getBrinkTSP((BrinkTSPindex)53);
+      if (response_val != -1.0f && current_flow_sensor) {
+        current_flow_sensor->publish_state(((uint16_t)((uint8_t)response_val) << 8) | temp_lb);
       }
       current_step++; break;
 
     case 7: // Status Filtra (TSP 13)
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
-      if (response && filter_status_binary) {
-        filter_status_binary->publish_state((response & 0xFF) == 1);
+      response_val = ot->getBrinkTSP((BrinkTSPindex)13);
+      if (response_val != -1.0f && filter_status_binary) {
+        filter_status_binary->publish_state(((uint8_t)response_val) == 1);
       }
       current_step = 0; break;
       
