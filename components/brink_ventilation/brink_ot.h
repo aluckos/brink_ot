@@ -1,31 +1,34 @@
+#pragma once
+
 #include "esphome.h"
 #include "OpenTherm.h"
-
-#pragma once
 
 namespace esphome {
 namespace brink_ventilation {
 
+// Najpierw deklarujemy klasę główną, żeby BrinkNumber mógł o niej wiedzieć
 class BrinkOpenTherm;
 
-static BrinkOpenTherm *global_brink_ot = nullptr;
-static void IRAM_ATTR handleInterrupt();
-
+// Klasa do sterowania suwakiem (Moc wentylacji)
 class BrinkNumber : public number::Number {
  public:
-  BrinkOpenTherm *parent_;
+  BrinkOpenTherm *parent_{nullptr};
   void set_parent(BrinkOpenTherm *parent) { parent_ = parent; }
+  
+  // Metoda sterująca wywoływana z Home Assistant
   void control(float value) override;
 };
 
+// Klasa główna komunikacji
 class BrinkOpenTherm : public PollingComponent {
  public:
-  OpenTherm *ot = nullptr;
+  OpenTherm *ot{nullptr};
   int pin_in, pin_out;
   int current_step = 0;
   float target_ventilation = 25.0f;
   uint8_t temp_lb = 0;
 
+  // Definicje sensorów
   sensor::Sensor *t_supply_in_sensor{nullptr};
   sensor::Sensor *t_exhaust_in_sensor{nullptr};
   sensor::Sensor *current_flow_sensor{nullptr};
@@ -40,73 +43,81 @@ class BrinkOpenTherm : public PollingComponent {
   void set_status_text_sensor(text_sensor::TextSensor *s) { status_text_sensor = s; }
   void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
 
-  void setup() override {
-    global_brink_ot = this;
-    ot = new OpenTherm(pin_in, pin_out);
-    ot->begin(handleInterrupt);
-  }
-
-  void update() override {
-    unsigned long response = 0;
-    // Standardowy Master Status (ID 0) - niezbędny do podtrzymania sesji
-    ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
-
-    if (this->status_text_sensor != nullptr) {
-      this->status_text_sensor->publish_state("Połączono");
-    }
-
-    switch(current_step) {
-      case 0: // Ustawienie mocy (ID 71)
-        ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
-        current_step++; break;
-
-      case 1: // T1 Czerpnia (ID 80)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
-        if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
-        current_step++; break;
-
-      case 2: // T3 Wywiew (ID 82)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
-        if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
-        current_step++; break;
-
-      case 3: // Przepływ m3/h (TSP 52)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-        if (response) temp_lb = (uint8_t)(response & 0xFF);
-        current_step++; break;
-
-      case 4: // Przepływ m3/h (TSP 53)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
-        if (response && current_flow_sensor) {
-          current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
-        }
-        current_step++; break;
-
-      case 5: // Odczyt statusu filtra z TSP 13 (I13)
-        // Wysyłamy prośbę o ID 89 z indeksem 13 (0x0D) przesuniętym na starszy bajt
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
-        
-        if (filter_status_binary) {
-          if (response) {
-            // Według Twojego kodu Arduino: I13 (Filter message) 1 = On
-            // Wartość znajduje się w młodszym bajcie odpowiedzi (Data Value)
-            bool filter_dirty = (response & 0xFF) == 1;
-            filter_status_binary->publish_state(filter_dirty);
-            
-            // Logowanie pomocnicze, aby potwierdzić odczyt w konsoli
-            ESP_LOGD("custom", "Odpowiedź TSP 13 (Filtr): %08lX -> Stan: %s", response, filter_dirty ? "BRUDNY" : "CZYSTY");
-          } else {
-            // Brak odpowiedzi z rekuperatora dla tego TSP
-            ESP_LOGW("custom", "Brak odpowiedzi dla TSP 13");
-          }
-        }
-        current_step = 0; break;
-    }
-  }
+  void setup() override;
+  void update() override;
 };
 
-inline void BrinkNumber::control(float value) { publish_state(value); parent_->target_ventilation = value; }
-static void IRAM_ATTR handleInterrupt() { if (global_brink_ot && global_brink_ot->ot) global_brink_ot->ot->handleInterrupt(); }
+// --- IMPLEMENTACJA FUNKCJI (poza klasami, aby uniknąć błędów scope) ---
+
+// Globalna instancja dla przerwań
+static BrinkOpenTherm *global_brink_ot = nullptr;
+
+// Funkcja obsługi przerwań (musi być IRAM_ATTR dla ESP8266)
+static void IRAM_ATTR handleInterrupt() {
+  if (global_brink_ot != nullptr && global_brink_ot->ot != nullptr) {
+    global_brink_ot->ot->handleInterrupt();
+  }
+}
+
+inline void BrinkOpenTherm::setup() {
+  global_brink_ot = this;
+  ot = new OpenTherm(pin_in, pin_out);
+  ot->begin(handleInterrupt);
+}
+
+inline void BrinkNumber::control(float value) {
+  this->publish_state(value);
+  if (this->parent_ != nullptr) {
+    this->parent_->target_ventilation = value;
+  }
+}
+
+inline void BrinkOpenTherm::update() {
+  if (ot == nullptr) return;
+
+  unsigned long response = 0;
+  // ID 0: Master Status (podtrzymanie komunikacji)
+  ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
+
+  if (this->status_text_sensor != nullptr) {
+    this->status_text_sensor->publish_state("Połączono");
+  }
+
+  switch(current_step) {
+    case 0: // Nastawa mocy (ID 71)
+      ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
+      current_step++; break;
+
+    case 1: // T1 Czerpnia (ID 80)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
+      if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
+      current_step++; break;
+
+    case 2: // T3 Wywiew (ID 82)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
+      if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
+      current_step++; break;
+
+    case 3: // Przepływ m3/h (TSP 52 - Low Byte)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
+      if (response) temp_lb = (uint8_t)(response & 0xFF);
+      current_step++; break;
+
+    case 4: // Przepływ m3/h (TSP 53 - High Byte)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
+      if (response && current_flow_sensor) {
+        current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+      }
+      current_step++; break;
+
+    case 5: // Status Filtra (TSP 13)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
+      if (response && filter_status_binary) {
+        filter_status_binary->publish_state((response & 0xFF) == 1);
+      }
+      current_step = 0; break;
+  }
+}
 
 } // namespace brink_ventilation
 } // namespace esphome
