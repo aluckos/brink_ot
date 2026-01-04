@@ -30,7 +30,6 @@ class BrinkOpenTherm : public PollingComponent {
   
   sensor::Sensor *current_flow_sensor{nullptr};
   binary_sensor::BinarySensor *filter_status_binary{nullptr};
-  // ZMIANA: Sensor tekstowy zastąpiony binarnym
   binary_sensor::BinarySensor *connection_status_binary{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
@@ -74,7 +73,8 @@ inline void BrinkOpenTherm::update() {
   if (ot == nullptr) return;
 
   unsigned long response = 0;
-  // ID 0: Master Status - używamy odpowiedzi do ustawienia stanu binarnym
+  
+  // ID 0: Master Status
   response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
 
   if (this->connection_status_binary != nullptr) {
@@ -82,30 +82,55 @@ inline void BrinkOpenTherm::update() {
   }
 
   switch(current_step) {
-    case 0: // Nastawa mocy (ID 71)
+    case 0: // Nastawa mocy
       ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
-      current_step++; break;
+      current_step++; 
+      break;
 
-    case 1: // T1 Czerpnia (ID 80)
+    case 1: // T1
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
       if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
-      current_step++; break;
+      current_step++; 
+      break;
 
-    case 2: // T2 Nawiew do domu (ID 81)
+    case 2: // T2
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
       if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
-      current_step++; break;
+      current_step++; 
+      break;
 
-    case 3: // T3 Wywiew z domu (ID 82)
+    case 3: // T3
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
       if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
-      current_step++; break;
+      current_step++; 
+      break;
 
-    case 4: // T4 Wyrzutnia na zewnątrz (ID 83)
+    case 4: // T4
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
       if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
-      current_step++; break;
+      current_step++; 
+      break;
 
-    case 5: // Przepływ m3/h (TSP 52 - Low Byte)
+    case 5: // Przepływ LB (TSP 52)
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-      if (response) temp_lb = (uint8_t)(response & 0
+      if (response) {
+        temp_lb = (uint8_t)(response & 0xFF);
+      }
+      current_step++; 
+      break;
+
+    case 6: // Przepływ HB (TSP 53)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
+      if (response && current_flow_sensor) {
+        uint16_t hb = (uint16_t)(response & 0xFF);
+        current_flow_sensor->publish_state((float)((hb << 8) | temp_lb));
+      }
+      current_step++; 
+      break;
+
+    case 7: // Status Filtra (TSP 13)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
+      if (response && filter_status_binary) {
+        filter_status_binary->publish_state((response & 0xFF) == 1);
+      }
+      current_step = 0
