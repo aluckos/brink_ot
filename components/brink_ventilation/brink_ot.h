@@ -23,14 +23,12 @@ class BrinkOpenTherm : public PollingComponent {
   float target_ventilation = 25.0f;
   uint8_t temp_lb = 0;
 
-  // Sensory
-  sensor::Sensor *t_supply_in_sensor{nullptr};   // T1
-  sensor::Sensor *t_supply_out_sensor{nullptr};  // T2
-  sensor::Sensor *t_exhaust_in_sensor{nullptr};  // T3
-  sensor::Sensor *t_exhaust_out_sensor{nullptr}; // T4
+  sensor::Sensor *t_supply_in_sensor{nullptr};
+  sensor::Sensor *t_supply_out_sensor{nullptr};
+  sensor::Sensor *t_exhaust_in_sensor{nullptr};
+  sensor::Sensor *t_exhaust_out_sensor{nullptr};
   sensor::Sensor *current_flow_sensor{nullptr};
   
-  // Zmiana na binary_sensor dla statusu połączenia
   binary_sensor::BinarySensor *connection_status_binary{nullptr};
   binary_sensor::BinarySensor *filter_status_binary{nullptr};
 
@@ -49,19 +47,7 @@ class BrinkOpenTherm : public PollingComponent {
   void update() override;
 };
 
-static BrinkOpenTherm *global_brink_ot = nullptr;
-
-static void IRAM_ATTR handleInterrupt() {
-  if (global_brink_ot != nullptr && global_brink_ot->ot != nullptr) {
-    global_brink_ot->ot->handleInterrupt();
-  }
-}
-
-inline void BrinkOpenTherm::setup() {
-  global_brink_ot = this;
-  ot = new OpenTherm(pin_in, pin_out);
-  ot->begin(handleInterrupt);
-}
+// --- Implementacje metod ---
 
 inline void BrinkNumber::control(float value) {
   this->publish_state(value);
@@ -70,11 +56,25 @@ inline void BrinkNumber::control(float value) {
   }
 }
 
+// Używamy bezpieczniejszej metody na statyczną instancję
+static BrinkOpenTherm *global_instance = nullptr;
+
+inline void IRAM_ATTR handleInterruptLocal() {
+  if (global_instance != nullptr && global_instance->ot != nullptr) {
+    global_instance->ot->handleInterrupt();
+  }
+}
+
+inline void BrinkOpenTherm::setup() {
+  global_instance = this;
+  ot = new OpenTherm(pin_in, pin_out);
+  ot->begin(handleInterruptLocal);
+}
+
 inline void BrinkOpenTherm::update() {
   if (ot == nullptr) return;
 
   unsigned long response = 0;
-  // Podtrzymanie komunikacji i sprawdzenie statusu połączenia
   response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
   
   if (this->connection_status_binary != nullptr) {
@@ -82,28 +82,45 @@ inline void BrinkOpenTherm::update() {
   }
 
   switch(current_step) {
-    case 0: // Nastawa mocy (ID 71)
+    case 0:
       ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
       current_step++; break;
-
-    case 1: // T1 Czerpnia (ID 80)
+    case 1:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
       if (ot->isValidResponse(response) && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
       current_step++; break;
-
-    case 2: // T2 Nawiew (ID 81)
+    case 2:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
       if (ot->isValidResponse(response) && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
       current_step++; break;
-
-    case 3: // T3 Wywiew (ID 82)
+    case 3:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
       if (ot->isValidResponse(response) && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
       current_step++; break;
-
-    case 4: // T4 Wyrzutnia (ID 83)
+    case 4:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
       if (ot->isValidResponse(response) && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
       current_step++; break;
+    case 5:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
+      if (ot->isValidResponse(response)) temp_lb = (uint8_t)(response & 0xFF);
+      current_step++; break;
+    case 6:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
+      if (ot->isValidResponse(response) && current_flow_sensor) {
+        current_flow_sensor->publish_state(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+      }
+      current_step++; break;
+    case 7:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
+      if (ot->isValidResponse(response) && filter_status_binary) {
+        filter_status_binary->publish_state((response & 0xFF) == 1);
+      }
+      current_step = 0; break;
+    default:
+      current_step = 0; break;
+  }
+}
 
-    case 5: // Przepływ m3/h (
+} // namespace brink_ventilation
+} // namespace esphome
