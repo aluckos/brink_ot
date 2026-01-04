@@ -8,78 +8,128 @@ namespace brink_ventilation {
 
 static const char *const TAG = "brink_ot";
 
-class BrinkOpenTherm : public PollingComponent, public fan::Fan {
+class BrinkOpenTherm;
+
+// Klasa do obsługi suwaka/nastawy
+class BrinkNumber : public number::Number {
+ public:
+  BrinkOpenTherm *parent_{nullptr};
+  void set_parent(BrinkOpenTherm *parent) { parent_ = parent; }
+  void control(float value) override;
+};
+
+class BrinkOpenTherm : public PollingComponent {
  public:
   OpenTherm *ot{nullptr};
   int pin_in, pin_out;
   int current_step = 0;
-  
-  // Wartości pomocnicze
-  float current_speed_pct = 0;
+  float target_ventilation = 25.0f; // To steruje % lub m3/h
   uint8_t temp_lb = 0;
 
-  // Sensory (T1-T4 + Przepływ)
-  sensor::Sensor *t1_s{nullptr}; sensor::Sensor *t2_s{nullptr};
-  sensor::Sensor *t3_s{nullptr}; sensor::Sensor *t4_s{nullptr};
-  sensor::Sensor *flow_s{nullptr};
-  binary_sensor::BinarySensor *filter_s{nullptr};
+  // Sensory temperatury (TSP zgodne z Twoją listą)
+  sensor::Sensor *t_supply_in_sensor{nullptr};   // T1 (TSP 57)
+  sensor::Sensor *t_supply_out_sensor{nullptr};  // T2 (TSP 69)
+  sensor::Sensor *t_exhaust_in_sensor{nullptr};  // T3 (TSP 58)
+  sensor::Sensor *t_exhaust_out_sensor{nullptr}; // T4 (TSP 70)
+  sensor::Sensor *current_flow_sensor{nullptr};  // Przepływ (TSP 62)
+  
+  binary_sensor::BinarySensor *filter_status_binary{nullptr}; // Filtr (TSP 13)
+  text_sensor::TextSensor *status_sensor{nullptr};
+  text_sensor::TextSensor *current_gear_sensor{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
   
-  // Funkcje fan::Fan
-  fan::FanTraits get_traits() override {
-    auto traits = fan::FanTraits(false, true, false, 3); // 3 biegi + 0
-    return traits;
-  }
+  // Settery wywoływane przez kod generowany przez ESPHome
+  void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
+  void set_t_supply_out_sensor(sensor::Sensor *s) { t_supply_out_sensor = s; } 
+  void set_t_exhaust_in_sensor(sensor::Sensor *s) { t_exhaust_in_sensor = s; }
+  void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; } 
+  void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
+  void set_filter_status_binary(binary_sensor::BinarySensor *s) { filter_status_binary = s; }
+  void set_status_sensor(text_sensor::TextSensor *s) { status_sensor = s; }
+  void set_current_gear_sensor(text_sensor::TextSensor *s) { current_gear_sensor = s; }
+  void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
 
-  void control(const fan::FanCall &call) override {
-    if (call.get_state().has_value()) this->state = *call.get_state();
-    if (call.get_speed().has_value()) {
-        int speed = *call.get_speed(); // 0, 1, 2, 3
-        // Mapowanie biegów na przepływ lub % (do ustalenia w WRITE_DATA)
-        if (speed == 1) current_speed_pct = 25.0f; 
-        else if (speed == 2) current_speed_pct = 50.0f;
-        else if (speed == 3) current_speed_pct = 100.0f;
-        else current_speed_pct = 10.0f;
-    }
-    this->publish_state();
-  }
-
-  void update() override {
-    unsigned long response = 0;
-    
-    switch(current_step) {
-      case 0: // Sterowanie (ID 71 - Ventilation Setpoint %)
-        ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)current_speed_pct));
-        current_step++; break;
-
-      case 1: // T1 (TSP 57) - Atmosfera wejście
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 57 << 8));
-        if (ot->isValidResponse(response) && t1_s) t1_s->publish_state((float)(response & 0xFF) - 100.0f);
-        current_step++; break;
-
-      case 2: // T2 (TSP 69) - Atmosfera wyjście
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 69 << 8));
-        if (ot->isValidResponse(response) && t2_s) t2_s->publish_state((float)(response & 0xFF) - 100.0f);
-        current_step++; break;
-
-      case 3: // T3 (TSP 58) - Wnętrze wejście
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 58 << 8));
-        if (ot->isValidResponse(response) && t3_s) t3_s->publish_state((float)(response & 0xFF) - 100.0f);
-        current_step++; break;
-
-      case 4: // T4 (TSP 70) - Wnętrze wyjście
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 70 << 8));
-        if (ot->isValidResponse(response) && t4_s) t4_s->publish_state((float)(response & 0xFF) - 100.0f);
-        current_step++; break;
-
-      case 5: // Odczyt aktualnego przepływu (TSP 52)
-        response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-        if (ot->isValidResponse(response) && flow_s) flow_s->publish_state(response & 0xFF);
-        current_step = 0; break;
-    }
-  }
+  void setup() override;
+  void update() override;
 };
+
+// Logika dla suwaka/nastawy biegów
+inline void BrinkNumber::control(float value) {
+  this->publish_state(value);
+  if (this->parent_ != nullptr) {
+    this->parent_->target_ventilation = value;
+  }
+}
+
+static BrinkOpenTherm *global_brink_ot_ptr = nullptr;
+static void IRAM_ATTR handleInterruptGlobal() {
+  if (global_brink_ot_ptr != nullptr && global_brink_ot_ptr->ot != nullptr) {
+    global_brink_ot_ptr->ot->handleInterrupt();
+  }
+}
+
+inline void BrinkOpenTherm::setup() {
+  global_brink_ot_ptr = this;
+  ot = new OpenTherm(pin_in, pin_out);
+  ot->begin(handleInterruptGlobal);
+}
+
+inline void BrinkOpenTherm::update() {
+  if (ot == nullptr) return;
+  unsigned long response = 0;
+
+  // Podtrzymanie sesji
+  ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
+  if (this->status_sensor != nullptr) this->status_sensor->publish_state("OK");
+
+  switch(current_step) {
+    case 0: // Sterowanie (Zapis do TSP 52 - Current Volume lub ID 71)
+      ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
+      current_step++; break;
+
+    case 1: // T1 (TSP 57) - Offset -100
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 57 << 8));
+      if (ot->isValidResponse(response) && t_supply_in_sensor) t_supply_in_sensor->publish_state((float)(response & 0xFF) - 100);
+      current_step++; break;
+
+    case 2: // T2 (TSP 69) - Offset -100
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 69 << 8));
+      if (ot->isValidResponse(response) && t_supply_out_sensor) t_supply_out_sensor->publish_state((float)(response & 0xFF) - 100);
+      current_step++; break;
+
+    case 3: // T3 (TSP 58) - Offset -100
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 58 << 8));
+      if (ot->isValidResponse(response) && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state((float)(response & 0xFF) - 100);
+      current_step++; break;
+
+    case 4: // T4 (TSP 70) - Offset -100
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 70 << 8));
+      if (ot->isValidResponse(response) && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state((float)(response & 0xFF) - 100);
+      current_step++; break;
+
+    case 5: // Odczyt aktualnego przepływu (TSP 62)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 62 << 8));
+      if (ot->isValidResponse(response) && current_flow_sensor) {
+          float flow = (float)(response & 0xFF);
+          current_flow_sensor->publish_state(flow);
+          
+          // Raportowanie biegu na podstawie przepływu (zgodnie z Twoją listą)
+          if (current_gear_sensor) {
+            if (flow > 250) current_gear_sensor->publish_state("Bieg 3");
+            else if (flow > 150) current_gear_sensor->publish_state("Bieg 2");
+            else if (flow > 50) current_gear_sensor->publish_state("Bieg 1");
+            else current_gear_sensor->publish_state("Bieg 0");
+          }
+      }
+      current_step++; break;
+
+    case 6: // Filtr (TSP 13)
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
+      if (ot->isValidResponse(response) && filter_status_binary) filter_status_binary->publish_state((response & 0xFF) > 0);
+      current_step = 0; break;
+  }
+}
 
 } // namespace brink_ventilation
 } // namespace esphome
