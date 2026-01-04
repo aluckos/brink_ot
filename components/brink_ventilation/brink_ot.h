@@ -4,18 +4,11 @@
 #include "OpenTherm.h"
 
 namespace esphome {
-
-// Deklaracje wyprzedzające (Forward declarations)
-// To mówi kompilatorowi: "Te klasy istnieją, nie martw się o include"
-namespace sensor { class Sensor; }
-namespace binary_sensor { class BinarySensor; }
-namespace number { class Number; }
-
 namespace brink_ventilation {
 
 class BrinkOpenTherm;
 
-class BrinkNumber : public esphome::number::Number {
+class BrinkNumber : public number::Number {
  public:
   BrinkOpenTherm *parent_{nullptr};
   void set_parent(BrinkOpenTherm *parent) { parent_ = parent; }
@@ -30,27 +23,26 @@ class BrinkOpenTherm : public PollingComponent {
   float target_ventilation = 25.0f;
   uint8_t temp_lb = 0;
 
-  // Sensory
-  esphome::sensor::Sensor *t_supply_in_sensor{nullptr};   
-  esphome::sensor::Sensor *t_supply_out_sensor{nullptr};  
-  esphome::sensor::Sensor *t_exhaust_in_sensor{nullptr};  
-  esphome::sensor::Sensor *t_exhaust_out_sensor{nullptr}; 
-  esphome::sensor::Sensor *current_flow_sensor{nullptr};
+  // Używamy pełnych nazw bez forward declarations na górze
+  sensor::Sensor *t_supply_in_sensor{nullptr};   
+  sensor::Sensor *t_supply_out_sensor{nullptr};  
+  sensor::Sensor *t_exhaust_in_sensor{nullptr};  
+  sensor::Sensor *t_exhaust_out_sensor{nullptr}; 
+  sensor::Sensor *current_flow_sensor{nullptr};
 
-  // Sensory binarne
-  esphome::binary_sensor::BinarySensor *filter_status_binary{nullptr};
-  esphome::binary_sensor::BinarySensor *connection_status_binary{nullptr};
+  binary_sensor::BinarySensor *filter_status_binary{nullptr};
+  binary_sensor::BinarySensor *connection_status_binary{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
   
-  void set_t_supply_in_sensor(esphome::sensor::Sensor *s) { t_supply_in_sensor = s; }
-  void set_t_supply_out_sensor(esphome::sensor::Sensor *s) { t_supply_out_sensor = s; } 
-  void set_t_exhaust_in_sensor(esphome::sensor::Sensor *s) { t_exhaust_in_sensor = s; }
-  void set_t_exhaust_out_sensor(esphome::sensor::Sensor *s) { t_exhaust_out_sensor = s; } 
-  void set_current_flow_sensor(esphome::sensor::Sensor *s) { current_flow_sensor = s; }
+  void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
+  void set_t_supply_out_sensor(sensor::Sensor *s) { t_supply_out_sensor = s; } 
+  void set_t_exhaust_in_sensor(sensor::Sensor *s) { t_exhaust_in_sensor = s; }
+  void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; } 
+  void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
 
-  void set_filter_status_binary(esphome::binary_sensor::BinarySensor *s) { filter_status_binary = s; }
-  void set_connection_status_binary(esphome::binary_sensor::BinarySensor *s) { connection_status_binary = s; }
+  void set_filter_status_binary(binary_sensor::BinarySensor *s) { filter_status_binary = s; }
+  void set_connection_status_binary(binary_sensor::BinarySensor *s) { connection_status_binary = s; }
   void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
 
   void setup() override;
@@ -78,12 +70,14 @@ inline void BrinkNumber::control(float value) {
   }
 }
 
+// Implementacja update musi być inline, aby uniknąć problemów z linkowaniem
 inline void BrinkOpenTherm::update() {
   if (ot == nullptr) return;
 
   unsigned long response = 0;
   response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
 
+  // Sprawdzamy czy sensor istnieje przed wywołaniem metody
   if (this->connection_status_binary != nullptr) {
     this->connection_status_binary->publish_state(ot->isValidResponse(response));
   }
@@ -115,7 +109,8 @@ inline void BrinkOpenTherm::update() {
     case 6:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
       if (response && current_flow_sensor) {
-        current_flow_sensor->publish_state((float)(((uint16_t)(response & 0xFF) << 8) | temp_lb));
+        float flow = (float)(((uint16_t)(response & 0xFF) << 8) | temp_lb);
+        current_flow_sensor->publish_state(flow);
       }
       current_step++; break;
     case 7:
