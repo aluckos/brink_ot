@@ -74,7 +74,6 @@ inline void BrinkOpenTherm::update() {
 
   unsigned long response = 0;
   
-  // ID 0: Master Status
   response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
 
   if (this->connection_status_binary != nullptr) {
@@ -82,36 +81,36 @@ inline void BrinkOpenTherm::update() {
   }
 
   switch(current_step) {
-    case 0: // Nastawa mocy
+    case 0:
       ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
       current_step++; 
       break;
 
-    case 1: // T1
+    case 1:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
       if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
       current_step++; 
       break;
 
-    case 2: // T2
+    case 2:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
       if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
       current_step++; 
       break;
 
-    case 3: // T3
+    case 3:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
       if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
       current_step++; 
       break;
 
-    case 4: // T4
+    case 4:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
       if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
       current_step++; 
       break;
 
-    case 5: // Przepływ LB (TSP 52)
+    case 5:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
       if (response) {
         temp_lb = (uint8_t)(response & 0xFF);
@@ -119,7 +118,7 @@ inline void BrinkOpenTherm::update() {
       current_step++; 
       break;
 
-    case 6: // Przepływ HB (TSP 53)
+    case 6:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
       if (response && current_flow_sensor) {
         uint16_t hb = (uint16_t)(response & 0xFF);
@@ -128,9 +127,19 @@ inline void BrinkOpenTherm::update() {
       current_step++; 
       break;
 
-    case 7: // Status Filtra (TSP 13)
+    case 7:
       response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
       if (response && filter_status_binary) {
         filter_status_binary->publish_state((response & 0xFF) == 1);
       }
-      current_step = 0
+      current_step = 0; // <--- SREDNIK DOPISANY
+      break;
+      
+    default:
+      current_step = 0; 
+      break;
+  }
+}
+
+} // namespace brink_ventilation
+} // namespace esphome
