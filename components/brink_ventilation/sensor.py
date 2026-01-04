@@ -2,55 +2,62 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sensor
 from esphome.const import (
-    CONF_ID, CONF_TYPE, CONF_NAME, DEVICE_CLASS_TEMPERATURE, 
-    STATE_CLASS_MEASUREMENT, UNIT_CELSIUS
+    CONF_ID, 
+    CONF_TYPE, 
+    UNIT_CELSIUS, 
+    ICON_THERMOMETER, 
+    DEVICE_CLASS_TEMPERATURE,
+    STATE_CLASS_MEASUREMENT,
 )
 from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 
-# Definicja dostępnych typów sensorów
-# Klucz: Nazwa typu w YAML
-# Wartość: [Domyślna nazwa, Jednostka, Dokładność, Klasa urządzenia]
+# Definicje typów sensorów i ich właściwości
 TYPES = {
-    # T1 - Czerpnia (ID 80)
-    "T_SUPPLY_IN": ["Brink Temp Czerpnia (T1)", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
-    
-    # T2 - Nawiew do domu (ID 81) - NOWOŚĆ
-    "T_SUPPLY_OUT": ["Brink Temp Nawiew (T2)", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
-    
-    # T3 - Wywiew z domu (ID 82)
-    "T_EXHAUST_IN": ["Brink Temp Wywiew (T3)", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
-    
-    # T4 - Wyrzutnia na zewnątrz (ID 83) - NOWOŚĆ
-    "T_EXHAUST_OUT": ["Brink Temp Wyrzutnia (T4)", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
-    
-    # Przepływ powietrza (TSP 52/53)
-    "CURRENT_FLOW": ["Brink Przepływ", "m³/h", 0, None],
+    "T_SUPPLY_IN": sensor.sensor_schema(
+        unit_of_measurement=UNIT_CELSIUS,
+        icon=ICON_THERMOMETER,
+        device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
+        accuracy_decimals=1,
+    ),
+    "T_SUPPLY_OUT": sensor.sensor_schema(
+        unit_of_measurement=UNIT_CELSIUS,
+        icon=ICON_THERMOMETER,
+        device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
+        accuracy_decimals=1,
+    ),
+    "T_EXHAUST_IN": sensor.sensor_schema(
+        unit_of_measurement=UNIT_CELSIUS,
+        icon=ICON_THERMOMETER,
+        device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
+        accuracy_decimals=1,
+    ),
+    "T_EXHAUST_OUT": sensor.sensor_schema(
+        unit_of_measurement=UNIT_CELSIUS,
+        icon=ICON_THERMOMETER,
+        device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
+        accuracy_decimals=1,
+    ),
+    "CURRENT_FLOW": sensor.sensor_schema(
+        unit_of_measurement="m³/h",
+        icon="mdi:air-filter",
+        state_class=STATE_CLASS_MEASUREMENT,
+        accuracy_decimals=0,
+    ),
 }
 
-CONFIG_SCHEMA = sensor.sensor_schema(
-    state_class=STATE_CLASS_MEASUREMENT,
-).extend({
-    cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm),
-    cv.Required(CONF_TYPE): cv.one_of(*TYPES, upper=True),
-}).extend(cv.COMPONENT_SCHEMA)
+CONFIG_SCHEMA = cv.TypedConfig(
+    CONF_TYPE,
+    {k: v.extend({cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm)}) for k, v in TYPES.items()},
+)
 
 async def to_code(config):
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
-    conf_data = TYPES[config[CONF_TYPE]]
-    
-    # Tworzymy obiekt sensora
     var = await sensor.new_sensor(config)
     
-    # Ustawiamy parametry (jednostka, dokładność, klasa)
-    cg.add(var.set_unit_of_measurement(conf_data[1]))
-    cg.add(var.set_accuracy_decimals(conf_data[2]))
-    if conf_data[3] is not None:
-        cg.add(var.set_device_class(conf_data[3]))
-    
-    # Magia automatycznego łączenia nazw:
-    # config[CONF_TYPE] zwraca np. "T_SUPPLY_OUT"
-    # .lower() zmienia to na "t_supply_out"
-    # f-string tworzy nazwę funkcji: "set_t_supply_out_sensor"
-    # Ta funkcja musi istnieć w brink_ot.h (i teraz już istnieje!)
-    func = getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")
-    cg.add(func(var))
+    # Buduje nazwę funkcji w C++, np. set_t_supply_in_sensor
+    func_name = f"set_{config[CONF_TYPE].lower()}_sensor"
+    cg.add(getattr(parent, func_name)(var))
