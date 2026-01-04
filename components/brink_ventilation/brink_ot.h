@@ -25,7 +25,7 @@ class BrinkOpenTherm : public PollingComponent {
   float target_ventilation = 25.0f;
   uint8_t temp_lb = 0;
 
-  // Sensory - nazwy muszą pasować do sensor.py (lower case)
+  // Sensory
   sensor::Sensor *t_supply_in_sensor{nullptr};   
   sensor::Sensor *t_supply_out_sensor{nullptr};  
   sensor::Sensor *t_exhaust_in_sensor{nullptr};  
@@ -37,12 +37,14 @@ class BrinkOpenTherm : public PollingComponent {
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
 
-  // Te funkcje wywołuje Python podczas kompilacji:
+  // FUNKCJE DLA PYTHON (SENSOR.PY)
   void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
   void set_t_supply_out_sensor(sensor::Sensor *s) { t_supply_out_sensor = s; } 
   void set_t_exhaust_in_sensor(sensor::Sensor *s) { t_exhaust_in_sensor = s; }
   void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; } 
   void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
+  
+  // FUNKCJE DLA BINARY_SENSOR / TEXT_SENSOR
   void set_filter_status_binary(binary_sensor::BinarySensor *s) { filter_status_binary = s; }
   void set_status_sensor(text_sensor::TextSensor *s) { status_sensor = s; }
   void set_current_gear_sensor(text_sensor::TextSensor *s) { current_gear_sensor = s; }
