@@ -2,6 +2,9 @@
 
 #include "esphome.h"
 #include "OpenTherm.h"
+// Dodaj te dwa include'y poniżej - to one naprawią błędy "does not name a type"
+#include "esphome/components/sensor/sensor.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
 
 namespace esphome {
 namespace brink_ventilation {
@@ -25,26 +28,25 @@ class BrinkOpenTherm : public PollingComponent {
   float target_ventilation = 25.0f;
   uint8_t temp_lb = 0;
 
-  // Definicje sensorów
-  sensor::Sensor *t_supply_in_sensor{nullptr};   // T1
-  sensor::Sensor *t_supply_out_sensor{nullptr};  // T2
-  sensor::Sensor *t_exhaust_in_sensor{nullptr};  // T3
-  sensor::Sensor *t_exhaust_out_sensor{nullptr}; // T4
-  
+  // Definicje sensorów - teraz kompilator będzie wiedział co to sensor::Sensor
+  sensor::Sensor *t_supply_in_sensor{nullptr};   
+  sensor::Sensor *t_supply_out_sensor{nullptr};  
+  sensor::Sensor *t_exhaust_in_sensor{nullptr};  
+  sensor::Sensor *t_exhaust_out_sensor{nullptr}; 
   sensor::Sensor *current_flow_sensor{nullptr};
+
+  // Definicje sensorów binarnych - teraz kompilator będzie wiedział co to binary_sensor::BinarySensor
   binary_sensor::BinarySensor *filter_status_binary{nullptr};
-  // Sensor binarny zamiast tekstowego
   binary_sensor::BinarySensor *connection_status_binary{nullptr};
 
   void set_pins(int in, int out) { pin_in = in; pin_out = out; }
   
-  // Settery dla sensorów
   void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
   void set_t_supply_out_sensor(sensor::Sensor *s) { t_supply_out_sensor = s; } 
   void set_t_exhaust_in_sensor(sensor::Sensor *s) { t_exhaust_in_sensor = s; }
   void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; } 
-  
   void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
+
   void set_filter_status_binary(binary_sensor::BinarySensor *s) { filter_status_binary = s; }
   void set_connection_status_binary(binary_sensor::BinarySensor *s) { connection_status_binary = s; }
   void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
@@ -53,7 +55,6 @@ class BrinkOpenTherm : public PollingComponent {
   void update() override;
 };
 
-// Globalna instancja dla przerwań
 static BrinkOpenTherm *global_brink_ot = nullptr;
 
 static void IRAM_ATTR handleInterrupt() {
@@ -79,8 +80,52 @@ inline void BrinkOpenTherm::update() {
   if (ot == nullptr) return;
 
   unsigned long response = 0;
-  // ID 0: Master Status (podtrzymanie komunikacji i sprawdzenie statusu)
   response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
 
   if (this->connection_status_binary != nullptr) {
-    this->connection_status_binary->
+    this->connection_status_binary->publish_state(ot->isValidResponse(response));
+  }
+
+  switch(current_step) {
+    case 0:
+      ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
+      current_step++; break;
+    case 1:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
+      if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
+      current_step++; break;
+    case 2:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
+      if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
+      current_step++; break;
+    case 3:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
+      if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
+      current_step++; break;
+    case 4:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
+      if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
+      current_step++; break;
+    case 5:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
+      if (response) temp_lb = (uint8_t)(response & 0xFF);
+      current_step++; break;
+    case 6:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
+      if (response && current_flow_sensor) {
+        current_flow_sensor->publish_state((float)(((uint16_t)(response & 0xFF) << 8) | temp_lb));
+      }
+      current_step++; break;
+    case 7:
+      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 13 << 8));
+      if (response && filter_status_binary) {
+        filter_status_binary->publish_state((response & 0xFF) == 1);
+      }
+      current_step = 0; break;
+    default:
+      current_step = 0; break;
+  }
+}
+
+} // namespace brink_ventilation
+} // namespace esphome
