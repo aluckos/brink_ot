@@ -1,119 +1,70 @@
-#pragma once
+import esphome.codegen as cg
+import esphome.config_validation as cv
+from esphome.components import sensor
+from esphome.const import (
+    CONF_ID, 
+    CONF_TYPE, 
+    UNIT_CELSIUS, 
+    ICON_THERMOMETER, 
+    DEVICE_CLASS_TEMPERATURE,
+    STATE_CLASS_MEASUREMENT,
+)
+from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 
-#include "esphome.h"
-#include "OpenTherm.h"
-
-namespace esphome {
-namespace brink_ventilation {
-
-class BrinkOpenTherm;
-
-// Klasa dla suwaka (Brink Nastawa Mocy)
-class BrinkNumber : public number::Number {
- public:
-  BrinkOpenTherm *parent_{nullptr};
-  void set_parent(BrinkOpenTherm *parent) { parent_ = parent; }
-  void control(float value) override;
-};
-
-class BrinkOpenTherm : public PollingComponent {
- public:
-  OpenTherm *ot{nullptr};
-  int pin_in, pin_out;
-  int current_step = 0;
-  float target_ventilation = 25.0f;
-  uint8_t temp_lb = 0;
-
-  // Sensory używane w Twoim YAML
-  sensor::Sensor *t_supply_in_sensor{nullptr};   
-  sensor::Sensor *t_supply_out_sensor{nullptr};  
-  sensor::Sensor *t_exhaust_in_sensor{nullptr};  
-  sensor::Sensor *t_exhaust_out_sensor{nullptr}; 
-  sensor::Sensor *current_flow_sensor{nullptr};
-
-  void set_pins(int in, int out) { pin_in = in; pin_out = out; }
-  
-  // Settery dla sensorów liczbowych (używane przez sensor.py)
-  void set_t_supply_in_sensor(sensor::Sensor *s) { t_supply_in_sensor = s; }
-  void set_t_supply_out_sensor(sensor::Sensor *s) { t_supply_out_sensor = s; } 
-  void set_t_exhaust_in_sensor(sensor::Sensor *s) { t_exhaust_in_sensor = s; }
-  void set_t_exhaust_out_sensor(sensor::Sensor *s) { t_exhaust_out_sensor = s; } 
-  void set_current_flow_sensor(sensor::Sensor *s) { current_flow_sensor = s; }
-
-  // PUSTE SETTERY - Naprawiają błędy kompilacji, jeśli pliki .py ich szukają, 
-  // ale nie używamy specyficznych typów danych, żeby nie potrzebować dodatkowych include'ów.
-  void set_filter_status_binary(void *s) {}
-  void set_connection_status_binary(void *s) {}
-  void set_status_sensor(void *s) {}
-  void set_current_gear_sensor(void *s) {}
-
-  void set_ventilation_number(BrinkNumber *n) { n->set_parent(this); }
-
-  void setup() override;
-  void update() override;
-};
-
-static BrinkOpenTherm *global_brink_ot = nullptr;
-static void IRAM_ATTR handleInterrupt() {
-  if (global_brink_ot != nullptr && global_brink_ot->ot != nullptr) {
-    global_brink_ot->ot->handleInterrupt();
-  }
+TYPES = {
+    "T_SUPPLY_IN": {
+        "unit": UNIT_CELSIUS,
+        "icon": ICON_THERMOMETER,
+        "device_class": DEVICE_CLASS_TEMPERATURE,
+        "state_class": STATE_CLASS_MEASUREMENT,
+        "decimals": 1,
+    },
+    "T_SUPPLY_OUT": {
+        "unit": UNIT_CELSIUS,
+        "icon": ICON_THERMOMETER,
+        "device_class": DEVICE_CLASS_TEMPERATURE,
+        "state_class": STATE_CLASS_MEASUREMENT,
+        "decimals": 1,
+    },
+    "T_EXHAUST_IN": {
+        "unit": UNIT_CELSIUS,
+        "icon": ICON_THERMOMETER,
+        "device_class": DEVICE_CLASS_TEMPERATURE,
+        "state_class": STATE_CLASS_MEASUREMENT,
+        "decimals": 1,
+    },
+    "T_EXHAUST_OUT": {
+        "unit": UNIT_CELSIUS,
+        "icon": ICON_THERMOMETER,
+        "device_class": DEVICE_CLASS_TEMPERATURE,
+        "state_class": STATE_CLASS_MEASUREMENT,
+        "decimals": 1,
+    },
+    "CURRENT_FLOW": {
+        "unit": "m³/h",
+        "icon": "mdi:air-filter",
+        "device_class": cv.maybe_simple_value,
+        "state_class": STATE_CLASS_MEASUREMENT,
+        "decimals": 0,
+    },
 }
 
-inline void BrinkOpenTherm::setup() {
-  global_brink_ot = this;
-  ot = new OpenTherm(pin_in, pin_out);
-  ot->begin(handleInterrupt);
-}
+CONFIG_SCHEMA = sensor.sensor_schema().extend({
+    cv.GenerateID(BRINK_VENTILATION_ID): cv.use_id(BrinkOpenTherm),
+    cv.Required(CONF_TYPE): cv.one_of(*TYPES, upper=True),
+}).extend(cv.COMPONENT_SCHEMA)
 
-inline void BrinkNumber::control(float value) {
-  this->publish_state(value);
-  if (this->parent_ != nullptr) {
-    this->parent_->target_ventilation = value;
-  }
-}
+async def to_code(config):
+    parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
+    type_info = TYPES[config[CONF_TYPE]]
+    var = await sensor.new_sensor(config)
+    
+    if not config.get("unit_of_measurement"):
+        cg.add(var.set_unit_of_measurement(type_info["unit"]))
+    if not config.get("icon"):
+        cg.add(var.set_icon(type_info["icon"]))
+    if not config.get("accuracy_decimals"):
+        cg.add(var.set_accuracy_decimals(type_info["decimals"]))
 
-inline void BrinkOpenTherm::update() {
-  if (ot == nullptr) return;
-
-  unsigned long response = 0;
-  // Podtrzymanie komunikacji
-  ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)0, 0x0100));
-
-  switch(current_step) {
-    case 0:
-      ot->sendRequest(ot->buildRequest(OpenThermMessageType::WRITE_DATA, (OpenThermMessageID)71, (unsigned int)target_ventilation));
-      current_step++; break;
-    case 1:
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)80, 0));
-      if (response && t_supply_in_sensor) t_supply_in_sensor->publish_state(ot->getFloat(response));
-      current_step++; break;
-    case 2:
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)81, 0));
-      if (response && t_supply_out_sensor) t_supply_out_sensor->publish_state(ot->getFloat(response));
-      current_step++; break;
-    case 3:
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)82, 0));
-      if (response && t_exhaust_in_sensor) t_exhaust_in_sensor->publish_state(ot->getFloat(response));
-      current_step++; break;
-    case 4:
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)83, 0));
-      if (response && t_exhaust_out_sensor) t_exhaust_out_sensor->publish_state(ot->getFloat(response));
-      current_step++; break;
-    case 5:
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 52 << 8));
-      if (response) temp_lb = (uint8_t)(response & 0xFF);
-      current_step++; break;
-    case 6:
-      response = ot->sendRequest(ot->buildRequest(OpenThermMessageType::READ_DATA, (OpenThermMessageID)89, 53 << 8));
-      if (response && current_flow_sensor) {
-        current_flow_sensor->publish_state((float)(((uint16_t)(response & 0xFF) << 8) | temp_lb));
-      }
-      current_step = 0; break;
-    default:
-      current_step = 0; break;
-  }
-}
-
-} // namespace brink_ventilation
-} // namespace esphome
+    func_name = f"set_{config[CONF_TYPE].lower()}_sensor"
+    cg.add(getattr(parent, func_name)(var))
