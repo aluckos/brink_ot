@@ -1,0 +1,46 @@
+external_components:
+  - source: github://aluckos/brink_ot
+    refresh: 0s
+
+brink_ventilation:
+  id: my_brink
+  in_pin: 4
+  out_pin: 5
+
+# Definicja Sensorów
+
+sensor:
+  - platform: brink_ventilation
+    type: T_SUPPLY_IN
+    name: "Brink Temp Czerpnia (T1)"
+
+  - platform: brink_ventilation
+    type: T_SUPPLY_OUT
+    name: "Brink Temp Nawiew (T2)"
+
+  - platform: brink_ventilation
+    type: T_EXHAUST_IN
+    name: "Brink Temp Wywiew (T3)"
+
+  - platform: brink_ventilation
+    type: T_EXHAUST_OUT
+    name: "Brink Temp Wyrzutnia (T4)"
+
+  - platform: brink_ventilation
+    type: CURRENT_FLOW
+    name: "Brink Aktualny Przepływ"
+
+# Suwak do sterowania mocą (0-100%)
+number:
+  - platform: brink_ventilation
+    name: "Brink Nastawa Mocy"
+    
+binary_sensor:
+  - platform: brink_ventilation
+    type: FILTER_STATUS
+    name: "Brink Status Filtra"
+
+text_sensor:
+  - platform: brink_ventilation
+    type: STATUS
+    name: "Brink Status Komunikacji"
