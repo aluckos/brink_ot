@@ -9,47 +9,12 @@ from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 
 # Definicja dostępnych typów sensorów
 # Klucz: Nazwa typu w YAML
-# Wartość: [Domyślna nazwa, Jednostka, Dokładność, Klasa urządzenia]
 TYPES = {
-    # T1 - Czerpnia (ID 80)
-    "T_SUPPLY_IN": [
-        "Brink Temp Czerpnia (T1)", 
-        UNIT_CELSIUS, 
-        1, 
-        DEVICE_CLASS_TEMPERATURE
-    ],
-    
-    # T2 - Nawiew do domu (ID 81) - NOWOŚĆ
-    "T_SUPPLY_OUT": [
-        "Brink Temp Nawiew (T2)", 
-        UNIT_CELSIUS, 
-        1, 
-        DEVICE_CLASS_TEMPERATURE
-    ],
-    
-    # T3 - Wywiew z domu (ID 82)
-    "T_EXHAUST_IN": [
-        "Brink Temp Wywiew (T3)", 
-        UNIT_CELSIUS, 
-        1, 
-        DEVICE_CLASS_TEMPERATURE
-    ],
-    
-    # T4 - Wyrzutnia na zewnątrz (ID 83) - NOWOŚĆ
-    "T_EXHAUST_OUT": [
-        "Brink Temp Wyrzutnia (T4)", 
-        UNIT_CELSIUS, 
-        1, 
-        DEVICE_CLASS_TEMPERATURE
-    ],
-    
-    # Przepływ powietrza (TSP 52/53)
-    "CURRENT_FLOW": [
-        "Brink Przepływ", 
-        "m³/h", 
-        0, 
-        None
-    ],
+    "T_SUPPLY_IN": "Brink Temp Czerpnia (T1)",
+    "T_SUPPLY_OUT": "Brink Temp Nawiew (T2)",
+    "T_EXHAUST_IN": "Brink Temp Wywiew (T3)",
+    "T_EXHAUST_OUT": "Brink Temp Wyrzutnia (T4)",
+    "CURRENT_FLOW": "Brink Przepływ",
 }
 
 CONFIG_SCHEMA = sensor.sensor_schema(
@@ -61,23 +26,20 @@ CONFIG_SCHEMA = sensor.sensor_schema(
 
 async def to_code(config):
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
-    conf_data = TYPES[config[CONF_TYPE]]
     
-    # Tworzymy obiekt sensora
+    # Tworzymy obiekt sensora z parametrami z YAML
     var = await sensor.new_sensor(config)
     
-    # Ustawiamy jednostkę i dokładność
-    cg.add(var.set_unit_of_measurement(conf_data[1]))
-    cg.add(var.set_accuracy_decimals(conf_data[2]))
+    # Ustawiamy dokładność dla temperatur
+    sensor_type = config[CONF_TYPE]
+    if sensor_type in ["T_SUPPLY_IN", "T_SUPPLY_OUT", "T_EXHAUST_IN", "T_EXHAUST_OUT"]:
+        cg.add(var.set_accuracy_decimals(1))
+    else:
+        cg.add(var.set_accuracy_decimals(0))
     
-    # Ustawiamy klasę urządzenia (jeśli jest zdefiniowana)
-    if conf_data[3] is not None:
-        cg.add(var.set_device_class(conf_data[3]))
-    
-    # Magia automatycznego łączenia nazw:
+    # Łączymy sensor z komponentem głównym (brink_ot.h)
     # config[CONF_TYPE] zwraca np. "T_SUPPLY_OUT"
     # .lower() zmienia to na "t_supply_out"
     # f-string tworzy nazwę funkcji: "set_t_supply_out_sensor"
-    # Ta funkcja musi istnieć w brink_ot.h (i teraz już istnieje!)
     func = getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")
     cg.add(func(var))
