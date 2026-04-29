@@ -12,19 +12,44 @@ from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 # Wartość: [Domyślna nazwa, Jednostka, Dokładność, Klasa urządzenia]
 TYPES = {
     # T1 - Czerpnia (ID 80)
-    "T_SUPPLY_IN": ["Brink Temp Czerpnia (T1)", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
+    "T_SUPPLY_IN": [
+        "Brink Temp Czerpnia (T1)", 
+        UNIT_CELSIUS, 
+        1, 
+        DEVICE_CLASS_TEMPERATURE
+    ],
     
     # T2 - Nawiew do domu (ID 81) - NOWOŚĆ
-    "T_SUPPLY_OUT": ["Brink Temp Nawiew (T2)", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
+    "T_SUPPLY_OUT": [
+        "Brink Temp Nawiew (T2)", 
+        UNIT_CELSIUS, 
+        1, 
+        DEVICE_CLASS_TEMPERATURE
+    ],
     
     # T3 - Wywiew z domu (ID 82)
-    "T_EXHAUST_IN": ["Brink Temp Wywiew (T3)", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
+    "T_EXHAUST_IN": [
+        "Brink Temp Wywiew (T3)", 
+        UNIT_CELSIUS, 
+        1, 
+        DEVICE_CLASS_TEMPERATURE
+    ],
     
     # T4 - Wyrzutnia na zewnątrz (ID 83) - NOWOŚĆ
-    "T_EXHAUST_OUT": ["Brink Temp Wyrzutnia (T4)", UNIT_CELSIUS, 1, DEVICE_CLASS_TEMPERATURE],
+    "T_EXHAUST_OUT": [
+        "Brink Temp Wyrzutnia (T4)", 
+        UNIT_CELSIUS, 
+        1, 
+        DEVICE_CLASS_TEMPERATURE
+    ],
     
     # Przepływ powietrza (TSP 52/53)
-    "CURRENT_FLOW": ["Brink Przepływ", "m³/h", 0, None],
+    "CURRENT_FLOW": [
+        "Brink Przepływ", 
+        "m³/h", 
+        0, 
+        None
+    ],
 }
 
 CONFIG_SCHEMA = sensor.sensor_schema(
@@ -41,12 +66,13 @@ async def to_code(config):
     # Tworzymy obiekt sensora
     var = await sensor.new_sensor(config)
     
-    # Ustawiamy parametry poprzez konfigurację
-    # (te metody są dostępne w sensor_schema)
+    # Ustawiamy jednostkę i dokładność
+    cg.add(var.set_unit_of_measurement(conf_data[1]))
     cg.add(var.set_accuracy_decimals(conf_data[2]))
     
-    # Jednostka i klasa urządzenia są ustawiane poprzez konfigurację YAML
-    # a nie poprzez metody C++ (które zostały usunięte)
+    # Ustawiamy klasę urządzenia (jeśli jest zdefiniowana)
+    if conf_data[3] is not None:
+        cg.add(var.set_device_class(conf_data[3]))
     
     # Magia automatycznego łączenia nazw:
     # config[CONF_TYPE] zwraca np. "T_SUPPLY_OUT"
