@@ -41,11 +41,12 @@ async def to_code(config):
     # Tworzymy obiekt sensora
     var = await sensor.new_sensor(config)
     
-    # Ustawiamy parametry (jednostka, dokładność, klasa)
-    cg.add(var.set_unit_of_measurement(conf_data[1]))
+    # Ustawiamy parametry poprzez konfigurację
+    # (te metody są dostępne w sensor_schema)
     cg.add(var.set_accuracy_decimals(conf_data[2]))
-    if conf_data[3] is not None:
-        cg.add(var.set_device_class(conf_data[3]))
+    
+    # Jednostka i klasa urządzenia są ustawiane poprzez konfigurację YAML
+    # a nie poprzez metody C++ (które zostały usunięte)
     
     # Magia automatycznego łączenia nazw:
     # config[CONF_TYPE] zwraca np. "T_SUPPLY_OUT"
