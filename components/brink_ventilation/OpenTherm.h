@@ -17,7 +17,7 @@ enum OpenThermMessageType {
 };
 
 enum OpenThermMessageID {
-  STATUS = 0,
+  OT_STATUS = 0,
   CONTROL_SETPOINT = 1,
   COMMAND_CODE = 2,
   FEED_TEMP = 3,
