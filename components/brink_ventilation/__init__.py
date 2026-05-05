@@ -17,4 +17,4 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     cg.add(var.set_pins(config["in_pin"], config["out_pin"]))
-    cg.add_library("ihormelnyk/OpenTherm Library", "1.1.5")
+    # OpenTherm library is now included locally in the component
