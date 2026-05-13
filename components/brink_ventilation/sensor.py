@@ -2,15 +2,10 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sensor
 from esphome.const import (
-    CONF_ID, 
-    CONF_TYPE, 
-    CONF_NAME, 
-    STATE_CLASS_MEASUREMENT, 
-    UNIT_CELSIUS
+    CONF_ID, CONF_TYPE, STATE_CLASS_MEASUREMENT, UNIT_CELSIUS
 )
 from . import BRINK_VENTILATION_ID, BrinkOpenTherm
 
-# Definicja dostępnych typów sensorów
 TYPES = {
     "T_SUPPLY_IN": "Brink Temp Czerpnia (T1)",
     "T_SUPPLY_OUT": "Brink Temp Nawiew (T2)",
@@ -27,28 +22,32 @@ CONFIG_SCHEMA = sensor.sensor_schema(
 }).extend(cv.COMPONENT_SCHEMA)
 
 async def to_code(config):
-    # Pobieramy referencję do głównego komponentu (brink_ot.h)
     parent = await cg.get_variable(config[BRINK_VENTILATION_ID])
     
-    # Tworzymy obiekt sensora
-    var = await sensor.new_sensor(config)
+    # Kopiujemy konfigurację, aby nie zmieniać oryginału
+    conf = config.copy()
     
-    sensor_type = config[CONF_TYPE]
+    # KLUCZOWY FIX: Usuwamy jednostkę z konfiguracji przed wywołaniem new_sensor.
+    # To powstrzyma ESPHome przed generowaniem linii ->set_unit_of_measurement() w C++
+    unit = ""
+    if conf[CONF_TYPE] in ["T_SUPPLY_IN", "T_SUPPLY_OUT", "T_EXHAUST_IN", "T_EXHAUST_OUT"]:
+        unit = UNIT_CELSIUS
+    elif conf[CONF_TYPE] == "CURRENT_FLOW":
+        unit = "m³/h"
     
-    # --- LOGIKA POPRAWIAJĄCA BŁĄD ---
+    # Czyścimy jednostkę w obiekcie config, żeby generator jej nie użył w C++
+    conf[sensor.CONF_UNIT_OF_MEASUREMENT] = "" 
     
-    if sensor_type in ["T_SUPPLY_IN", "T_SUPPLY_OUT", "T_EXHAUST_IN", "T_EXHAUST_OUT"]:
-        # Ustawienia dla temperatur
-        cg.add(var.set_unit_of_measurement(UNIT_CELSIUS))
-        cg.add(var.set_accuracy_decimals(1))
-    elif sensor_type == "CURRENT_FLOW":
-        # Ustawienia dla przepływu powietrza
-        cg.add(var.set_unit_of_measurement("m³/h"))
+    var = await sensor.new_sensor(conf)
+    
+    # Teraz ustawiamy jednostkę "po cichu" tylko dla Home Assistant (w metadanych)
+    cg.add(var.set_unit_of_measurement(unit))
+    
+    # Ustawiamy dokładność
+    if conf[CONF_TYPE] == "CURRENT_FLOW":
         cg.add(var.set_accuracy_decimals(0))
-    
-    # --- KONIEC POPRAWKI ---
+    else:
+        cg.add(var.set_accuracy_decimals(1))
 
-    # Łączymy sensor z odpowiednią funkcją "set_..._sensor" w brink_ot.h
-    func_name = f"set_{sensor_type.lower()}_sensor"
-    func = getattr(parent, func_name)
+    func = getattr(parent, f"set_{config[CONF_TYPE].lower()}_sensor")
     cg.add(func(var))
